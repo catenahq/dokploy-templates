@@ -87,7 +87,7 @@ dokploy_template_catalog:
       - host: "signaling.{{ cloudflare_zone }}"
         service: talk-hpb
         port: 8081
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/nextcloud-s3.compose.yml"
+    compose_file: "compose/nextcloud-s3.compose.yml"
     # R19: Nextcloud objectstore stores the file content in customer-
     # owned S3, excluded from restic. After a restore, run `occ
     # files:scan --all` so Nextcloud reconciles its DB filecache
@@ -323,7 +323,7 @@ dokploy_template_catalog:
     domain_host: "office.{{ cloudflare_zone }}"
     domain_service: collabora
     domain_port: 9980
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/collabora.compose.yml"
+    compose_file: "compose/collabora.compose.yml"
     # Collabora has no JWT secret -- WOPI hosts are matched against the
     # `domain` regex inside the compose env (nextcloud\..*).
     env_defaults: []
@@ -369,7 +369,7 @@ dokploy_template_catalog:
     domain_host: "office.{{ cloudflare_zone }}"
     domain_service: documentserver
     domain_port: 80
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/onlyoffice.compose.yml"
+    compose_file: "compose/onlyoffice.compose.yml"
     env_defaults:
       - "JWT_SECRET={{ lookup('password', '/dev/null length=48 chars=ascii_letters,digits') }}"
     en:
@@ -414,7 +414,7 @@ dokploy_template_catalog:
     domain_host: "chat.{{ cloudflare_zone }}"
     domain_service: rocketchat
     domain_port: 3000
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/rocketchat.compose.yml"
+    compose_file: "compose/rocketchat.compose.yml"
     # Bundled Jitsi env -- re-injected on every converge so a client
     # who edited the value in Dokploy UI cannot drift these out of
     # sync with the shared coturn secret in the vault. Matches the
@@ -491,7 +491,7 @@ dokploy_template_catalog:
     domain_host: "sign.{{ cloudflare_zone }}"
     domain_service: docuseal
     domain_port: 3000
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/docuseal.compose.yml"
+    compose_file: "compose/docuseal.compose.yml"
     env_defaults:
       - "DOCUSEAL_HOSTNAME=sign.{{ cloudflare_zone }}"
       - "SECRET_KEY_BASE={{ lookup('password', '/dev/null length=128 chars=hexdigits') | lower }}"
@@ -576,7 +576,7 @@ dokploy_template_catalog:
     domain_host: "sign-legacy.{{ cloudflare_zone }}"
     domain_service: documenso
     domain_port: 3000
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/documenso.compose.yml"
+    compose_file: "compose/documenso.compose.yml"
     env_defaults:
       - "DOCUMENSO_HOSTNAME=sign.{{ cloudflare_zone }}"
       - "NEXTAUTH_SECRET={{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
@@ -685,7 +685,7 @@ dokploy_template_catalog:
     domain_host: "wiki.{{ cloudflare_zone }}"
     domain_service: outline
     domain_port: 3000
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/outline.compose.yml"
+    compose_file: "compose/outline.compose.yml"
     env_defaults:
       - "OUTLINE_HOSTNAME=wiki.{{ cloudflare_zone }}"
       - "OUTLINE_SECRET_KEY={{ lookup('password', '/dev/null length=64 chars=hexdigits') | lower }}"
@@ -725,7 +725,7 @@ dokploy_template_catalog:
     domain_host: "crm.{{ cloudflare_zone }}"
     domain_service: espocrm
     domain_port: 80
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/espocrm.compose.yml"
+    compose_file: "compose/espocrm.compose.yml"
     env_defaults:
       - "ESPOCRM_HOSTNAME=crm.{{ cloudflare_zone }}"
       - "ESPOCRM_ADMIN_USERNAME=admin"
@@ -803,7 +803,7 @@ dokploy_template_catalog:
     domain_host: "twenty.{{ cloudflare_zone }}"
     domain_service: server
     domain_port: 3000
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/twenty.compose.yml"
+    compose_file: "compose/twenty.compose.yml"
     env_defaults:
       - "TWENTY_HOSTNAME=twenty.{{ cloudflare_zone }}"
       - "TWENTY_APP_SECRET={{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
@@ -844,7 +844,7 @@ dokploy_template_catalog:
     domain_host: "projects.{{ cloudflare_zone }}"
     domain_service: proxy
     domain_port: 80
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/plane.compose.yml"
+    compose_file: "compose/plane.compose.yml"
     env_defaults:
       - "PLANE_HOSTNAME=projects.{{ cloudflare_zone }}"
       - "PLANE_SECRET_KEY={{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
@@ -885,7 +885,7 @@ dokploy_template_catalog:
     domain_host: "cal.{{ cloudflare_zone }}"
     domain_service: caldiy
     domain_port: 3000
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/cal-diy.compose.yml"
+    compose_file: "compose/cal-diy.compose.yml"
     env_defaults:
       - "CALDIY_HOSTNAME=cal.{{ cloudflare_zone }}"
       - "NEXTAUTH_SECRET={{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
@@ -975,7 +975,7 @@ dokploy_template_catalog:
     domain_host: "help.{{ cloudflare_zone }}"
     domain_service: zammad-nginx
     domain_port: 8080
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/zammad.compose.yml"
+    compose_file: "compose/zammad.compose.yml"
     env_defaults:
       - "ZAMMAD_HOSTNAME=help.{{ cloudflare_zone }}"
       - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
@@ -1015,7 +1015,7 @@ dokploy_template_catalog:
     domain_host: "support.{{ cloudflare_zone }}"
     domain_service: rails
     domain_port: 3000
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/chatwoot.compose.yml"
+    compose_file: "compose/chatwoot.compose.yml"
     env_defaults:
       - "CHATWOOT_HOSTNAME=support.{{ cloudflare_zone }}"
       - "SECRET_KEY_BASE={{ lookup('password', '/dev/null length=128 chars=hexdigits') | lower }}"
@@ -1056,7 +1056,7 @@ dokploy_template_catalog:
     domain_host: "www.{{ cloudflare_zone }}"
     domain_service: nginx
     domain_port: 80
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/wordpress.compose.yml"
+    compose_file: "compose/wordpress.compose.yml"
     env_managed_keys:
       - WORDPRESS_HOSTNAME
       - WPMS_SMTP_PASS
@@ -1129,7 +1129,7 @@ dokploy_template_catalog:
     domain_host: "automate.{{ cloudflare_zone }}"
     domain_service: n8n
     domain_port: 5678
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/n8n.compose.yml"
+    compose_file: "compose/n8n.compose.yml"
     env_defaults:
       - "N8N_HOSTNAME=automate.{{ cloudflare_zone }}"
       - "N8N_TIMEZONE=UTC"
@@ -1175,7 +1175,7 @@ dokploy_template_catalog:
     domain_host: "erp.{{ cloudflare_zone }}"
     domain_service: frontend
     domain_port: 8080
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/erpnext.compose.yml"
+    compose_file: "compose/erpnext.compose.yml"
     env_defaults:
       - "ERPNEXT_HOSTNAME=erp.{{ cloudflare_zone }}"
       - "ERPNEXT_ADMIN_PASSWORD={{ lookup('password', '/dev/null length=24 chars=ascii_letters,digits') }}"
@@ -1230,7 +1230,7 @@ dokploy_template_catalog:
     domain_host: "budget.{{ cloudflare_zone }}"
     domain_service: actual
     domain_port: 5006
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/actualbudget.compose.yml"
+    compose_file: "compose/actualbudget.compose.yml"
     env_defaults: []
     en:
       display_name: Actual Budget
@@ -1270,7 +1270,7 @@ dokploy_template_catalog:
     domain_host: "social.{{ cloudflare_zone }}"
     domain_service: postiz
     domain_port: 5000
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/postiz.compose.yml"
+    compose_file: "compose/postiz.compose.yml"
     env_defaults:
       - "POSTIZ_HOSTNAME=social.{{ cloudflare_zone }}"
       - "JWT_SECRET={{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
@@ -1311,7 +1311,7 @@ dokploy_template_catalog:
     domain_host: "book.{{ cloudflare_zone }}"
     domain_service: easyappointments
     domain_port: 80
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/easyappointments.compose.yml"
+    compose_file: "compose/easyappointments.compose.yml"
     env_defaults:
       - "EASYAPPOINTMENTS_HOSTNAME=book.{{ cloudflare_zone }}"
       - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
@@ -1380,7 +1380,7 @@ dokploy_template_catalog:
     domain_host: "marketing.{{ cloudflare_zone }}"
     domain_service: mautic_web
     domain_port: 80
-    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/mautic.compose.yml"
+    compose_file: "compose/mautic.compose.yml"
     env_defaults:
       - "MAUTIC_HOSTNAME=marketing.{{ cloudflare_zone }}"
       - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
