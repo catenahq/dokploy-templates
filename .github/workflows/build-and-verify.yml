@@ -1,0 +1,36 @@
+name: build-and-verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  render-idempotency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Render
+        run: uv run build/render.py
+      - name: Verify no drift between source/ and blueprints/ + meta.json
+        run: |
+          if ! git diff --exit-code blueprints meta.json; then
+            echo ""
+            echo "render output drifted from committed artifacts."
+            echo "Run 'uv run build/render.py' locally, commit the diff, push."
+            exit 1
+          fi
+
+  unicode-hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: check:unicode
+        run: node scripts/check-unicode.mjs
