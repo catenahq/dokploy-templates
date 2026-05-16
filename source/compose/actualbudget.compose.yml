@@ -1,0 +1,30 @@
+# Actual Budget -- self-hosted personal finance (YNAB / Mint alternative).
+# Single-container app with a local SQLite database + file storage.
+# Server uses its own password login (set on first visit) -- no OIDC
+# support in the upstream project.
+
+services:
+  actual:
+    image: actualbudget/actual-server:26.5.1-alpine
+    restart: unless-stopped
+    environment:
+      ACTUAL_HTTPS: "false"               # TLS terminated by Traefik
+      ACTUAL_TRUST_PROXY: "true"
+      ACTUAL_PORT: "5006"
+    volumes:
+      - actual-data:/data
+    labels:
+      - "vps.auth.mode=public"
+      - "vps.auto-update=patch"
+    networks:
+      dokploy-network:
+        aliases:
+          - actualbudget
+      default: {}
+
+volumes:
+  actual-data:
+
+networks:
+  dokploy-network:
+    external: true

@@ -1,0 +1,84 @@
+# DocuSeal -- open-source document signing. Replaces Documenso in this
+# stack as of 2026-04-29 (F5a decision); Documenso is kept in catalog
+# under a deprecation banner for the migration window.
+#
+# Auth: DocuSeal community edition has admin-UI SSO config (Settings ->
+# SSO). Marked sso_mode=post-deploy-ui in the catalog -- after first
+# deploy, an admin pastes OIDC_* values from the Environment tab into
+# the SSO settings page. The local admin login keeps working as a
+# break-glass.
+#
+# Storage: docuseal-data holds uploaded PDFs, signature images, and
+# generated signed PDFs. Picked up by restic via /var/lib/docker/volumes.
+# Postgres holds metadata + audit trail.
+
+services:
+  docuseal:
+    image: docuseal/docuseal:2.5.2
+    restart: unless-stopped
+    environment:
+      HOST: https://${DOCUSEAL_HOSTNAME}
+      FORCE_SSL: "true"
+      DATABASE_URL: postgres://docuseal:${DB_PASSWORD}@db:5432/docuseal
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+
+      # SMTP -- DocuSeal uses SMTP_* env vars. Optional; when unset,
+      # signature-request emails are not delivered (recipients still
+      # see pending requests in their dashboard if they sign in).
+      SMTP_ADDRESS: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM_ADDRESS:-}
+      SMTP_AUTHENTICATION: ${SMTP_AUTH:-plain}
+
+      # Exposed for operator reference (Settings -> SSO) but not
+      # consumed by DocuSeal directly at boot. Operator pastes these
+      # in the admin UI once after first sign-in.
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL}
+    volumes:
+      - docuseal-data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+    labels:
+      - "vps.auth.mode=public"
+      - "vps.auth.oidc=true"
+      - "vps.auth.groups=client-staff"
+      - "vps.auth.oidc.redirect_uris=https://${DOCUSEAL_HOSTNAME}/users/auth/openid_connect/callback"
+      - "vps.auth.oidc.scopes=openid email profile"
+      - "vps.auto-update=patch"
+    networks:
+      dokploy-network:
+        aliases:
+          - docuseal
+      default: {}
+
+  db:
+    image: postgres:16.13-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: docuseal
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: docuseal
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docuseal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "vps.auto-update=patch"
+    networks:
+      - default
+
+volumes:
+  docuseal-data:
+  db-data:
+
+networks:
+  dokploy-network:
+    external: true

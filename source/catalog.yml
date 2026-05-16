@@ -1,0 +1,1463 @@
+---
+# Dokploy "Templates" project catalog. Single source of truth consumed by:
+#
+#   - roles/infrastructure/tasks/dokploy_templates.yml  -> seeds the
+#     compose entries into Dokploy at install time (the `compose_description`
+#     field is what shows up in Dokploy's description column).
+#   - operator-tools/generate-template-docs.py                  -> renders the
+#     per-template client-docs pages + the index page (uses all fields).
+#
+# Each entry:
+#   Shared fields (language-neutral):
+#     id               -- stable key (used as sentinel key + Dokploy appName)
+#     app_name         -- Dokploy compose name (short kebab-case)
+#     upstream_url     -- upstream project website
+#     sso_mode         -- enum: pre-wired | post-deploy-ui | jackson-curl | auto | none | n/a
+#                        "pre-wired": zero post-deploy step, SSO works out of the box
+#                        "post-deploy-ui": paste OIDC_* values in app's admin UI once
+#                        "jackson-curl": one-time curl registers SSO via bundled Jackson broker
+#                        "auto": operator's converge runs an idempotent post-deploy CLI hook
+#                                (e.g. occ user_oidc:provider) to wire SSO; client never touches it
+#                        "none": community edition doesn't support OIDC; users keep app-local login
+#                        "n/a": no user login (server-to-server template like OnlyOffice)
+#     domain_host      -- default hostname (Jinja-rendered at install)
+#     domain_service   -- compose service name Traefik routes to
+#     domain_port      -- internal port on that service
+#     compose_file     -- path to the compose file on the controller
+#     env_defaults     -- list of "KEY=value" strings for Dokploy's Environment tab
+#     pg_replay_depends_on (optional) -- list of basenames whose pg_dump
+#                        sections must replay BEFORE this one. Used by
+#                        roles/backup/tasks/pg_replay.yml to topologically
+#                        sort the per-db replay order. Names match the
+#                        Postgres container basename (the part before
+#                        the timestamp in <basename>-<ISO>.sql.gz). Most
+#                        templates leave this unset (no cross-db deps);
+#                        set it for apps whose data references another
+#                        template's data.
+#     pause_during_migrate_cutover (optional bool, default true) --
+#                        whether `flows.migrate`'s pre-cutover quiesce
+#                        step issues `docker pause` against this app's
+#                        containers before taking the final snapshot.
+#                        Default true (preserves in-memory state but
+#                        stops writes mid-flush). Set to false ONLY for
+#                        apps where pause is unsafe (long-running jobs,
+#                        connection pools that don't survive freeze).
+#                        See R20 in BACKLOG_TECHNICAL.md.
+#     s3_reconcile (optional dict) -- declares a post-restore DB ↔ S3
+#                        consistency check (R19 in BACKLOG_TECHNICAL.md). Apps
+#                        that store primary file content in customer-
+#                        owned S3 (Nextcloud objectstore, Outline
+#                        attachments) keep their DB in restic but the
+#                        S3 bucket is excluded by design. After a
+#                        restore, the DB still indexes files; if the
+#                        bucket is missing or rotated, the user sees
+#                        broken links. The reconciliation step runs the
+#                        declared command inside the app's container
+#                        and reports any orphan rows. Shape:
+#                            s3_reconcile:
+#                              service: app          # compose service
+#                              command: ["sh","-c","occ files:scan --all"]
+#                              orphan_pattern: "^([0-9]+) errors?"
+#                        Default: report-only (no DB mutations). Add
+#                        a `delete_orphans: true` flag (off by default)
+#                        to opt into destructive cleanup.
+#   Per-language (en, fr) fields:
+#     display_name        -- human-readable app name
+#     what_it_is          -- one-line pitch
+#     replaces            -- list of commercial apps this replaces (for "what does it do" positioning)
+#     compose_description -- short text shown in Dokploy's description column:
+#                           what/replaces/link to full docs. Keep it ~3 lines.
+#     setup_steps         -- Markdown block of numbered steps to get running
+#     extra_notes         -- optional Markdown block (for walk-throughs, tables, etc.)
+
+dokploy_template_catalog:
+  - id: nextcloud-s3-oidc
+    app_name: nextcloud
+    upstream_url: https://nextcloud.com
+    sso_mode: auto
+    domain_host: "nextcloud.{{ cloudflare_zone }}"
+    domain_service: app
+    domain_port: 80
+    # Talk + HPB signaling endpoint. aio-talk bundles
+    # signaling+janus+nats; only its HTTP/WSS port (8081) is publicly
+    # reachable. Ride the same wildcard CNAME at the Cloudflare layer
+    # (signaling.<zone>) and let Traefik route to the talk-hpb
+    # service via the Dokploy domain mapping.
+    extra_domains:
+      - host: "signaling.{{ cloudflare_zone }}"
+        service: talk-hpb
+        port: 8081
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/nextcloud-s3.compose.yml"
+    # R19: Nextcloud objectstore stores the file content in customer-
+    # owned S3, excluded from restic. After a restore, run `occ
+    # files:scan --all` so Nextcloud reconciles its DB filecache
+    # against what's actually in the bucket. occ exits non-zero +
+    # logs counts of missing files when the bucket has rotated.
+    s3_reconcile:
+      service: app
+      # nextcloud:apache image has no sudo; honor the user via
+      # `docker exec -u www-data` (s3_reconcile.yml's argv builder
+      # injects -u when this field is set). occ MUST run as
+      # www-data so files-scan writes oc_filecache rows with the
+      # right ownership.
+      user: www-data
+      command:
+        - php
+        - occ
+        - files:scan
+        - --all
+      orphan_pattern: "\\\\| Errors\\\\s*\\\\|\\\\s*([0-9]+)\\\\s*\\\\|"
+    # EP3: every operator-controlled OIDC env var is in
+    # env_managed_keys so a converge auto-heals the discovery URL,
+    # client ID, and client secret if a client edited them in the
+    # Dokploy UI. Hostname/admin/db secrets are NOT managed (we want
+    # client edits to survive). DO NOT add lookup('password', ...)
+    # values to env_managed_keys -- Jinja re-evaluates on every
+    # converge and minted-fresh-each-time would rotate secrets and
+    # break the deployment.
+    env_managed_keys:
+      - OIDC_CLIENT_ID
+      - OIDC_CLIENT_SECRET
+      - OIDC_DISCOVERY_URL
+      - OIDC_ISSUER_URL
+      - OIDC_REDIRECT_URL
+      # Talk + HPB (aio-talk) keys. Re-injected on every converge so
+      # a client who edited the value in Dokploy UI cannot drift
+      # these out of sync with the shared coturn secret + signaling
+      # endpoint hostname. Match the `talk-hpb` service in
+      # nextcloud-s3.compose.yml.
+      - SIGNALING_HOSTNAME
+      - SIGNALING_SECRET
+      - TALK_INTERNAL_SECRET
+      - TURN_HOSTNAME
+      - TURN_STATIC_AUTH_SECRET
+    env_defaults:
+      - "NEXTCLOUD_HOSTNAME=nextcloud.{{ cloudflare_zone }}"
+      - "NEXTCLOUD_ADMIN_USER=admin"
+      - "NEXTCLOUD_ADMIN_PASSWORD={{ lookup('password', '/dev/null length=24 chars=ascii_letters,digits') }}"
+      - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      # S3 primary-storage coords. Defaults target the canonical
+      # catena hot-tier (OVH BHS); operator overrides region/host
+      # in the Dokploy UI for non-default deployments. Bucket name +
+      # IAM creds are always per-client and stay blank in the
+      # template so the operator must fill them before Deploy.
+      - "S3_BUCKET="
+      - "S3_REGION=bhs"
+      - "S3_HOST=s3.bhs.io.cloud.ovh.net"
+      - "S3_ACCESS_KEY="
+      - "S3_SECRET_KEY="
+      # OIDC env vars consumed by the post-deploy "Wire Nextcloud
+      # OIDC" OliveTin button (script:
+      # /usr/local/bin/catena-wire-nextcloud-oidc). These match
+      # the Keycloak realm client (clientId=nextcloud, secret from
+      # vault) and the Keycloak discovery URL. The script reads them
+      # from inside the running container at click time.
+      - "OIDC_CLIENT_ID=nextcloud"
+      - "OIDC_CLIENT_SECRET={{ vault_nextcloud_oidc_client_secret }}"
+      - "OIDC_DISCOVERY_URL=https://{{ keycloak_hostname | default('auth.' ~ cloudflare_zone) }}/realms/{{ keycloak_realm | default('vps') }}/.well-known/openid-configuration"
+      - "OIDC_ISSUER_URL=https://{{ keycloak_hostname | default('auth.' ~ cloudflare_zone) }}/realms/{{ keycloak_realm | default('vps') }}"
+      - "OIDC_REDIRECT_URL=https://nextcloud.{{ cloudflare_zone }}/apps/user_oidc/code"
+      # Talk + HPB env. Auto-injected from the vault and inventory.
+      # SIGNALING_HOSTNAME is the public hostname clients dial for the
+      # WSS signaling endpoint (signaling.<base>, routed through
+      # Cloudflare Tunnel + Traefik to the talk-hpb service:8081).
+      # SIGNALING_SECRET is the bearer secret between aio-talk and
+      # Talk; the wire script (catena-wire-nextcloud-talk-hpb) passes
+      # this same value to `occ talk:signaling:add` so both ends
+      # agree.
+      # TALK_INTERNAL_SECRET is the internal-only secret between
+      # aio-talk's signaling frontend and its backend store; never
+      # leaves the container.
+      # TURN_HOSTNAME / TURN_STATIC_AUTH_SECRET point Janus inside
+      # aio-talk at the standalone coturn (turn.<base>:5349) for ICE
+      # relay. Sharing the secret with Rocket.Chat's Jitsi consolidates
+      # all media through one TURN provider.
+      - "SIGNALING_HOSTNAME=signaling.{{ cloudflare_zone }}"
+      - "SIGNALING_SECRET={{ vault_nextcloud_talk_signaling_secret }}"
+      - "TALK_INTERNAL_SECRET={{ vault_nextcloud_talk_internal_secret }}"
+      - "TURN_HOSTNAME={{ coturn_hostname | default('turn.' ~ cloudflare_zone) }}"
+      - "TURN_STATIC_AUTH_SECRET={{ vault_turn_static_auth_secret }}"
+    en:
+      display_name: Nextcloud
+      what_it_is: Self-hosted file sharing and collaboration -- the file hub that other templates plug into.
+      replaces: ["Google Drive", "Dropbox", "OneDrive for Business"]
+      compose_description: |
+        Self-hosted file sharing + collaboration. Replaces Google Drive / Dropbox / OneDrive.
+
+        First-time setup:
+        1. Fill the S3_* variables in the Environment tab.
+        2. Click Deploy.
+        3. Open actions.<your-domain> and click "Wire Nextcloud OIDC" -- registers Keycloak SSO inside Nextcloud (idempotent, safe to re-click).
+        4. Sign in with "Log in with keycloak" at your Nextcloud domain.
+
+        Full docs: https://catena.run/docs/apps/nextcloud-s3-oidc/
+      setup_steps: |
+        1. Open the **Environment** tab and fill `S3_BUCKET`, `S3_REGION`, `S3_HOST`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` with your bucket's coordinates. (Everything else is pre-filled -- `NEXTCLOUD_HOSTNAME`, admin/DB credentials, OIDC integration vars.)
+        2. Click **Deploy**. Wait ~2 minutes for the first boot.
+        3. Wire SSO: open `actions.<your-domain>` and click **Wire Nextcloud OIDC**. The button registers Keycloak as an OIDC provider inside Nextcloud (idempotent -- safe to re-click after redeploys or secret rotations).
+        4. Sign in at your Nextcloud domain with **Log in with keycloak** (uses your operator-managed identity), or fall back to `NEXTCLOUD_ADMIN_USER` / `NEXTCLOUD_ADMIN_PASSWORD` from the Environment tab.
+      extra_notes: |
+        ### Sign-in with Keycloak -- wired by the OliveTin button
+
+        After Nextcloud's first deploy you click **Wire Nextcloud
+        OIDC** at `actions.<your-domain>`. The button enables
+        Nextcloud's `user_oidc` app and registers a `keycloak`
+        provider with the OIDC fields from the Environment tab. The
+        Nextcloud login page then shows **Log in with keycloak** the
+        next time you visit. Local admin login (`NEXTCLOUD_ADMIN_USER`
+        / `NEXTCLOUD_ADMIN_PASSWORD`) keeps working alongside SSO as
+        a break-glass.
+
+        Re-click the button any time the OIDC configuration drifts
+        (after a secret rotation, a destructive redeploy, etc.). It
+        is idempotent -- re-running just refreshes the provider
+        record.
+
+        ### Sharing files by email link still works
+
+        Keycloak SSO governs **user login** to Nextcloud. It does
+        **not** restrict anonymous public share links --
+        `/s/<token>` URLs your team generates from inside Nextcloud
+        are reachable by recipients who have no Keycloak account.
+
+        So the common workflow stays intact:
+
+        1. A signed-in user (your team member) creates a share link
+           in Nextcloud, optionally with a password and expiry date.
+        2. Nextcloud emails the link to the recipient.
+        3. The recipient clicks the link. Cloudflare Tunnel routes
+           the request straight to Nextcloud; Nextcloud serves the
+           public share page (or the password prompt, if you set
+           one). No Keycloak redirect, no login required.
+
+        This works because Nextcloud is reached via Nextcloud's own
+        auth code, not a forward-auth proxy. The `user_oidc` plugin
+        only handles the login flow for *your team members*; the
+        public-share endpoints remain anonymous-by-design.
+
+        If you ever need to lock down public shares entirely, the
+        right control is inside Nextcloud (Settings -> Sharing ->
+        "Allow share via public link"), not at the network layer.
+    fr:
+      display_name: Nextcloud
+      what_it_is: Partage de fichiers et collaboration auto-hébergés -- le hub auquel d'autres templates se connectent.
+      replaces: ["Google Drive", "Dropbox", "OneDrive Entreprise"]
+      compose_description: |
+        Partage de fichiers + collaboration auto-hébergés. Remplace Google Drive / Dropbox / OneDrive.
+
+        Configuration initiale :
+        1. Remplissez les variables S3_* dans l'onglet Environment.
+        2. Cliquez sur Deploy.
+        3. Ouvrez actions.<votre-domaine> et cliquez "Câbler l'OIDC pour Nextcloud" -- enregistre le SSO Keycloak dans Nextcloud (idempotent, peut être recliqué).
+        4. Connectez-vous avec "Se connecter avec keycloak" sur votre domaine Nextcloud.
+
+        Doc complète : https://catena.run/docs/apps/nextcloud-s3-oidc/
+      setup_steps: |
+        1. Ouvrez l'onglet **Environment** et remplissez `S3_BUCKET`, `S3_REGION`, `S3_HOST`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` avec les coordonnées de votre seau S3. (Le reste est pré-rempli -- `NEXTCLOUD_HOSTNAME`, identifiants admin/DB, variables d'intégration OIDC.)
+        2. Cliquez **Deploy**. Patientez ~2 min pour le premier démarrage.
+        3. Câblez le SSO : ouvrez `actions.<votre-domaine>` puis cliquez **Câbler l'OIDC pour Nextcloud**. Le bouton enregistre Keycloak comme fournisseur OIDC à l'intérieur de Nextcloud (idempotent -- peut être recliqué sans risque après un redéploiement ou une rotation de secret).
+        4. Connectez-vous sur votre domaine Nextcloud avec **Se connecter avec keycloak** (utilise votre identité gérée par l'opérateur), ou repli sur `NEXTCLOUD_ADMIN_USER` / `NEXTCLOUD_ADMIN_PASSWORD` de l'onglet Environment.
+      extra_notes: |
+        ### Connexion avec Keycloak -- câblée par le bouton OliveTin
+
+        Après le premier déploiement de Nextcloud, vous cliquez
+        **Câbler l'OIDC pour Nextcloud** sur
+        `actions.<votre-domaine>`. Le bouton active l'application
+        `user_oidc` de Nextcloud et enregistre un fournisseur
+        `keycloak` avec les valeurs OIDC de l'onglet Environment. La
+        page de connexion Nextcloud affiche alors **Se connecter
+        avec keycloak** à votre prochaine visite. La connexion admin
+        locale (`NEXTCLOUD_ADMIN_USER` / `NEXTCLOUD_ADMIN_PASSWORD`)
+        continue de fonctionner en parallèle comme issue de secours.
+
+        Recliquez le bouton chaque fois que la configuration OIDC
+        dérive (après une rotation de secret, un redéploiement
+        destructif, etc.). Il est idempotent -- relancer ne fait que
+        rafraîchir l'enregistrement du fournisseur.
+
+        ### Le partage de fichiers par lien courriel fonctionne toujours
+
+        L'authentification Keycloak gouverne la **connexion des
+        utilisateurs** à Nextcloud. Elle ne restreint **pas** les
+        liens de partage publics anonymes -- les URL
+        `/s/<jeton>` que votre équipe génère depuis Nextcloud
+        restent accessibles aux destinataires qui n'ont pas de
+        compte Keycloak.
+
+        Le flux courant fonctionne donc tel quel :
+
+        1. Un membre de votre équipe (utilisateur connecté) crée un
+           lien de partage dans Nextcloud, avec un mot de passe et
+           une date d'expiration s'il le souhaite.
+        2. Nextcloud envoie le lien par courriel au destinataire.
+        3. Le destinataire clique le lien. Cloudflare Tunnel
+           achemine la requête directement à Nextcloud ; Nextcloud
+           sert la page de partage publique (ou l'invite de mot de
+           passe, si vous en avez défini un). Pas de redirection
+           Keycloak, pas de connexion requise.
+
+        Cela fonctionne parce que Nextcloud est atteint via son
+        propre code d'authentification, pas via un proxy
+        forward-auth. Le module `user_oidc` ne gère que le flux de
+        connexion pour *les membres de votre équipe* ; les points
+        d'accès des partages publics restent anonymes par
+        conception.
+
+        Si vous souhaitez verrouiller complètement les partages
+        publics, le bon contrôle est à l'intérieur de Nextcloud
+        (Paramètres -> Partage -> "Autoriser le partage par lien
+        public"), pas au niveau réseau.
+
+  # Both office editors target office.<base>. Only ONE is deployed
+  # per client at install time (operator picks per format-fidelity
+  # preference). Both seeded so the choice is a single click in
+  # Dokploy. The companion OliveTin buttons (Wire Nextcloud Collabora
+  # / Wire Nextcloud OnlyOffice) install + configure the matching
+  # Nextcloud-side app and remove the OTHER editor's app cleanly,
+  # so switching is reversible without leftover state.
+
+  - id: collabora
+    app_name: collabora
+    upstream_url: https://www.collaboraonline.com/
+    sso_mode: n/a
+    domain_host: "office.{{ cloudflare_zone }}"
+    domain_service: collabora
+    domain_port: 9980
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/collabora.compose.yml"
+    # Collabora has no JWT secret -- WOPI hosts are matched against the
+    # `domain` regex inside the compose env (nextcloud\..*).
+    env_defaults: []
+    en:
+      display_name: Collabora Online (CODE)
+      what_it_is: Collaborative ODT/DOCX/XLSX/PPTX editing -- bolts into Nextcloud for real-time co-editing. LibreOffice-based; lighter than OnlyOffice; better fidelity for ODF formats.
+      replaces: ["Microsoft Office Online", "Google Docs (as embedded editor)"]
+      compose_description: |
+        LibreOffice-based collaborative editor. Embedded in Nextcloud. Lighter alternative to OnlyOffice; better ODF fidelity.
+
+        https://catena.run/docs/apps/collabora/
+      setup_steps: |
+        1. Click **Deploy**. Wait ~30 s for the document server to boot.
+        2. From the operator dashboard, click the **Wire Nextcloud Collabora** button. The button installs the Nextcloud Office app, points it at this server, and -- if you previously had OnlyOffice wired -- removes the OnlyOffice Nextcloud app cleanly.
+        3. Open any DOCX/XLSX/PPTX/ODT file in Nextcloud. It opens in the embedded Collabora editor.
+
+        Switching back to OnlyOffice later is one click: stop this Collabora compose, deploy `onlyoffice`, then click the **Wire Nextcloud OnlyOffice** button.
+
+        Don't visit the Collabora domain directly in a browser -- it has no UI of its own. Users only ever see it through Nextcloud when they open a document.
+      extra_notes: ""
+    fr:
+      display_name: Collabora Online (CODE)
+      what_it_is: Édition collaborative ODT/DOCX/XLSX/PPTX -- s'intègre à Nextcloud pour la co-édition temps réel. Basé sur LibreOffice ; plus léger qu'OnlyOffice ; meilleure fidélité pour les formats ODF.
+      replaces: ["Microsoft Office Online", "Google Docs (éditeur embarqué)"]
+      compose_description: |
+        Éditeur collaboratif basé sur LibreOffice. Embarqué dans Nextcloud. Alternative légère à OnlyOffice ; meilleure fidélité ODF.
+
+        https://catena.run/docs/apps/collabora/
+      setup_steps: |
+        1. Cliquez **Deploy**. Patientez ~30 s le démarrage du serveur d'édition.
+        2. Depuis le tableau de bord opérateur, cliquez le bouton **Wire Nextcloud Collabora**. Le bouton installe l'application Nextcloud Office, la pointe vers ce serveur, et -- si OnlyOffice était précédemment câblé -- retire proprement l'application Nextcloud OnlyOffice.
+        3. Ouvrez n'importe quel fichier DOCX/XLSX/PPTX/ODT dans Nextcloud. Il s'ouvre dans l'éditeur Collabora embarqué.
+
+        Pour revenir à OnlyOffice plus tard : arrêtez ce conteneur Collabora, déployez `onlyoffice`, puis cliquez le bouton **Wire Nextcloud OnlyOffice**.
+
+        N'accédez pas au domaine Collabora directement dans un navigateur -- il n'a pas d'interface utilisateur. Les utilisateurs ne le voient qu'à travers Nextcloud.
+      extra_notes: ""
+
+  - id: onlyoffice
+    app_name: onlyoffice
+    upstream_url: https://www.onlyoffice.com/
+    sso_mode: n/a
+    domain_host: "office.{{ cloudflare_zone }}"
+    domain_service: documentserver
+    domain_port: 80
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/onlyoffice.compose.yml"
+    env_defaults:
+      - "JWT_SECRET={{ lookup('password', '/dev/null length=48 chars=ascii_letters,digits') }}"
+    en:
+      display_name: OnlyOffice
+      what_it_is: Collaborative DOCX/XLSX/PPTX editing -- bolts into Nextcloud for real-time co-editing with high MS Office fidelity.
+      replaces: ["Microsoft Office Online", "Google Docs (as embedded editor)"]
+      compose_description: |
+        Collaborative DOCX/XLSX/PPTX editor. Embedded in Nextcloud. Replaces Office 365 / Google Docs as the embedded editor.
+
+        https://catena.run/docs/apps/onlyoffice/
+      setup_steps: |
+        1. Click **Deploy**. Wait ~1 min for the document server to boot.
+        2. From the operator dashboard, click the **Wire Nextcloud OnlyOffice** button. The button installs the Nextcloud OnlyOffice app, reads the JWT secret from this template, points the app at this server, and -- if you previously had Collabora wired -- removes the Collabora Nextcloud app cleanly.
+        3. Open any DOCX/XLSX/PPTX file in Nextcloud. It opens in the embedded OnlyOffice editor.
+
+        Switching to Collabora later is one click: stop this OnlyOffice compose, deploy `collabora`, then click the **Wire Nextcloud Collabora** button.
+
+        Don't visit the OnlyOffice domain directly in a browser -- it has no UI of its own. Users only ever see it through Nextcloud when they open a document.
+      extra_notes: ""
+    fr:
+      display_name: OnlyOffice
+      what_it_is: Édition collaborative DOCX/XLSX/PPTX -- s'intègre à Nextcloud pour la co-édition temps réel avec une haute fidélité aux formats MS Office.
+      replaces: ["Microsoft Office Online", "Google Docs (éditeur embarqué)"]
+      compose_description: |
+        Éditeur collaboratif DOCX/XLSX/PPTX. Embarqué dans Nextcloud. Remplace Office 365 / Google Docs comme éditeur.
+
+        https://catena.run/docs/apps/onlyoffice/
+      setup_steps: |
+        1. Cliquez **Deploy**. Patientez ~1 min le démarrage du Document Server.
+        2. Depuis le tableau de bord opérateur, cliquez le bouton **Wire Nextcloud OnlyOffice**. Le bouton installe l'application Nextcloud OnlyOffice, lit la clé JWT depuis ce template, pointe l'application vers ce serveur, et -- si Collabora était précédemment câblé -- retire proprement l'application Nextcloud Collabora.
+        3. Ouvrez n'importe quel fichier DOCX/XLSX/PPTX dans Nextcloud. Il s'ouvre dans l'éditeur OnlyOffice embarqué.
+
+        Pour passer à Collabora plus tard : arrêtez ce conteneur OnlyOffice, déployez `collabora`, puis cliquez le bouton **Wire Nextcloud Collabora**.
+
+        N'accédez pas au domaine OnlyOffice directement dans un navigateur -- il n'a pas d'interface utilisateur. Les utilisateurs ne le voient qu'à travers Nextcloud.
+      extra_notes: ""
+
+  - id: rocketchat-oidc
+    app_name: rocketchat
+    upstream_url: https://www.rocket.chat/
+    sso_mode: pre-wired
+    domain_host: "chat.{{ cloudflare_zone }}"
+    domain_service: rocketchat
+    domain_port: 3000
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/rocketchat.compose.yml"
+    # Bundled Jitsi env -- re-injected on every converge so a client
+    # who edited the value in Dokploy UI cannot drift these out of
+    # sync with the shared coturn secret in the vault. Matches the
+    # `# === JITSI BEGIN ===` block in rocketchat.compose.yml.
+    env_managed_keys:
+      - VPS_PUBLIC_IP
+      - TURN_STATIC_AUTH_SECRET
+      - JITSI_PROSODY_PASSWORD
+      - JITSI_JICOFO_AUTH_PASSWORD
+      - JITSI_JICOFO_COMPONENT_SECRET
+      - JITSI_JVB_AUTH_PASSWORD
+    env_defaults:
+      - "ROCKETCHAT_HOSTNAME=chat.{{ cloudflare_zone }}"
+      # Used by the bundled Jitsi web UI for its PUBLIC_URL and by
+      # JVB for JVB_TURN_HOST. compose interpolation does not have a
+      # built-in "strip the leading rocketchat. label", so we render
+      # the base zone explicitly here.
+      - "ROCKETCHAT_HOSTNAME_BASE={{ cloudflare_zone }}"
+      - "OIDC_BASE_URL=https://{{ keycloak_hostname | default('auth.' ~ cloudflare_zone) }}"
+      # Bootstrap admin -- consumed by both Rocket.Chat itself
+      # (creates the admin user on first boot) and by
+      # rocketchat-jitsi-wire.sh (logs in as this user to flip the
+      # Jitsi_* settings via REST). Password lives in the vault.
+      - "ADMIN_USERNAME=admin"
+      - "ADMIN_PASS={{ vault_admin_password }}"
+      # Jitsi env -- shared coturn secret + per-component bearer
+      # secrets minted in seed.py. Idle when the JITSI block is
+      # commented out (RC keeps working as chat-only).
+      - "VPS_PUBLIC_IP={{ public_ip }}"
+      - "TURN_STATIC_AUTH_SECRET={{ vault_turn_static_auth_secret }}"
+      - "JITSI_PROSODY_PASSWORD={{ vault_jitsi_prosody_password }}"
+      - "JITSI_JICOFO_AUTH_PASSWORD={{ vault_jitsi_jicofo_auth_password }}"
+      - "JITSI_JICOFO_COMPONENT_SECRET={{ vault_jitsi_jicofo_component_secret }}"
+      - "JITSI_JVB_AUTH_PASSWORD={{ vault_jitsi_jvb_auth_password }}"
+    en:
+      display_name: Rocket.Chat
+      what_it_is: Team chat -- channels, direct messages, file sharing, mobile apps, and video calls. Keycloak SSO pre-wired.
+      replaces: ["Slack", "Microsoft Teams", "Discord (for work)"]
+      compose_description: |
+        Team chat + video. Keycloak SSO pre-wired. Replaces Slack / Microsoft Teams.
+
+        https://catena.run/docs/apps/rocketchat-oidc/
+      setup_steps: |
+        1. Click **Deploy**. Nothing to fill in the Environment tab unless you want a different hostname.
+        2. Wait ~5 minutes for the first sync. The login page will show **Sign in with Keycloak**.
+        3. Sign in. The first user becomes the workspace admin.
+        4. *(Optional, ~30 s)* Attach Nextcloud files in chats: Administration -> Apps -> Marketplace -> search `Nextcloud` -> install -> set your Nextcloud domain in the app settings. Users can then type `/nextcloud` in any chat to browse and attach files.
+      extra_notes: |
+        ### Mobile apps
+
+        Rocket.Chat's iOS and Android apps connect straight to your server. Users paste `https://chat.<your-domain>` into the app on first launch and sign in via Keycloak.
+    fr:
+      display_name: Rocket.Chat
+      what_it_is: Messagerie d'équipe -- canaux, messages directs, partage de fichiers, apps mobiles, appels vidéo. Keycloak SSO pré-câblé.
+      replaces: ["Slack", "Microsoft Teams", "Discord (en usage pro)"]
+      compose_description: |
+        Messagerie d'équipe + vidéo. Keycloak SSO pré-câblé. Remplace Slack / Microsoft Teams.
+
+        https://catena.run/docs/apps/rocketchat-oidc/
+      setup_steps: |
+        1. Cliquez **Deploy**. Rien à remplir dans l'onglet Environment sauf si vous voulez un autre nom de domaine.
+        2. Patientez ~5 min pour la synchro initiale. La page de connexion affichera **Se connecter avec Keycloak**.
+        3. Connectez-vous. Le premier utilisateur devient l'admin du workspace.
+        4. *(Optionnel, ~30 s)* Joindre des fichiers Nextcloud : Administration -> Apps -> Marketplace -> cherchez `Nextcloud` -> installez -> indiquez votre domaine Nextcloud. Les utilisateurs tapent ensuite `/nextcloud` dans un chat pour parcourir et joindre leurs fichiers.
+      extra_notes: |
+        ### Applications mobiles
+
+        Les apps iOS et Android de Rocket.Chat se connectent directement à votre serveur. Les utilisateurs collent `https://chat.<votre-domaine>` au premier lancement et se connectent via Keycloak.
+
+  - id: docuseal
+    app_name: docuseal
+    upstream_url: https://www.docuseal.com/
+    sso_mode: post-deploy-ui
+    domain_host: "sign.{{ cloudflare_zone }}"
+    domain_service: docuseal
+    domain_port: 3000
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/docuseal.compose.yml"
+    env_defaults:
+      - "DOCUSEAL_HOSTNAME=sign.{{ cloudflare_zone }}"
+      - "SECRET_KEY_BASE={{ lookup('password', '/dev/null length=128 chars=hexdigits') | lower }}"
+      - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      - "SMTP_HOST="
+      - "SMTP_PORT=587"
+      - "SMTP_USERNAME="
+      - "SMTP_PASSWORD="
+      - "SMTP_FROM_ADDRESS="
+      - "SMTP_AUTH=plain"
+      # OIDC integration vars consumed by the post-deploy admin UI
+      # toggle (Settings -> SSO). Not env-managed: DocuSeal persists
+      # the values in its own DB once the admin saves them.
+      - "OIDC_CLIENT_ID=docuseal"
+      - "OIDC_CLIENT_SECRET="
+      - "OIDC_ISSUER_URL=https://{{ keycloak_hostname | default('auth.' ~ cloudflare_zone) }}/realms/{{ keycloak_realm | default('vps') }}"
+    en:
+      display_name: DocuSeal
+      what_it_is: Default document-signing app in the stack (replaces Documenso). Upload a PDF, place signature fields, send for signature. Audit trail +
+        signed-PDF generation built-in.
+      replaces: ["DocuSign", "HelloSign", "PandaDoc", "Adobe Sign"]
+      compose_description: |
+        Open-source document signing (default). Replaces DocuSign / HelloSign.
+
+        https://catena.run/docs/apps/docuseal/
+      setup_steps: |
+        1. Click **Deploy**. Wait ~1 min for the first boot.
+        2. Visit your DocuSeal domain and complete the first-run wizard (creates the initial admin account).
+        3. *(Optional)* Enable Keycloak SSO: **Settings** -> **SSO** -> choose **OpenID Connect** -> paste:
+           - **Client ID:** `OIDC_CLIENT_ID` from Environment (`docuseal`)
+           - **Client Secret:** `OIDC_CLIENT_SECRET` from Environment (ask your operator to mint one in Keycloak if blank)
+           - **Issuer URL:** `OIDC_ISSUER_URL`
+           - Save. The login page gains a **Sign in with Keycloak** button. Local admin login keeps working as a break-glass.
+        4. *(Optional)* Configure SMTP for signature-request emails: fill `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_ADDRESS` in the Environment tab and redeploy. Without SMTP, recipients only see pending requests in their DocuSeal dashboard.
+      extra_notes: |
+        ### Why DocuSeal is the default
+
+        DocuSeal supersedes Documenso (still in the catalog under a deprecation banner). Faster boot, simpler signing-cert handling (no PKCS12 mint step on first deploy), and a maintained iOS/Android app. Documenso remains in catalog while existing clients migrate.
+
+        ### Signing certificate
+
+        DocuSeal generates signed PDFs out of the box without a separate signing-cert mint step. Adobe Acrobat shows the signature as cryptographically valid but with a "self-signed root" warning by default -- same caveat as Documenso. For legally-binding signatures, contact your operator to install a CA-issued cert via DocuSeal's admin UI (Settings -> Signature -> Certificates).
+
+        ### SMTP
+
+        Without SMTP configured, signature-request emails are not delivered. Recipients still see pending requests in their dashboard. To enable email, fill the `SMTP_*` env vars in the Environment tab.
+    fr:
+      display_name: DocuSeal
+      what_it_is: Application de signature électronique par défaut de la stack (remplace Documenso). Téléversez un PDF, placez les champs de signature, envoyez
+        pour signature. Piste d'audit + génération de PDF signé intégrées.
+      replaces: ["DocuSign", "HelloSign", "PandaDoc", "Adobe Sign"]
+      compose_description: |
+        Signature électronique open-source (par défaut). Remplace DocuSign / HelloSign.
+
+        https://catena.run/docs/apps/docuseal/
+      setup_steps: |
+        1. Cliquez **Deploy**. Patientez ~1 min pour le premier démarrage.
+        2. Visitez votre domaine DocuSeal et complétez l'assistant initial (création du compte admin).
+        3. *(Optionnel)* Activez Keycloak SSO : **Settings** -> **SSO** -> choisissez **OpenID Connect** -> collez :
+           - **Client ID :** `OIDC_CLIENT_ID` depuis Environment (`docuseal`)
+           - **Client Secret :** `OIDC_CLIENT_SECRET` depuis Environment (demandez à votre opérateur de le générer côté Keycloak si vide)
+           - **Issuer URL :** `OIDC_ISSUER_URL`
+           - Validez. La page de connexion affiche **Sign in with Keycloak**. La connexion admin locale continue de fonctionner comme issue de secours.
+        4. *(Optionnel)* Configurez SMTP pour les e-mails de demande de signature : remplissez `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_ADDRESS` dans l'onglet Environment puis redéployez. Sans SMTP, les destinataires ne voient que les demandes en attente dans leur tableau de bord.
+      extra_notes: |
+        ### Pourquoi DocuSeal est par défaut
+
+        DocuSeal remplace Documenso (toujours au catalogue avec un bandeau de dépréciation). Démarrage plus rapide, gestion du certificat de signature simplifiée (pas d'étape PKCS12 au premier déploiement), et apps iOS/Android maintenues. Documenso reste au catalogue le temps que les clients existants migrent.
+
+        ### Certificat de signature
+
+        DocuSeal génère des PDF signés d'emblée sans étape de génération de certificat. Adobe Acrobat affiche la signature comme cryptographiquement valide mais avec un avertissement "racine auto-signée" par défaut -- même limite que Documenso. Pour des signatures à valeur légale, contactez votre opérateur pour installer un certificat émis par une AC via l'UI admin DocuSeal (Settings -> Signature -> Certificates).
+
+        ### SMTP
+
+        Sans SMTP configuré, les e-mails de demande de signature ne sont pas envoyés. Les destinataires voient les demandes en attente dans leur tableau de bord. Pour activer les e-mails, renseignez les variables `SMTP_*` dans l'onglet Environment.
+
+  - id: documenso
+    app_name: documenso
+    upstream_url: https://documenso.com/
+    sso_mode: pre-wired
+    domain_host: "sign-legacy.{{ cloudflare_zone }}"
+    domain_service: documenso
+    domain_port: 3000
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/documenso.compose.yml"
+    env_defaults:
+      - "DOCUMENSO_HOSTNAME=sign.{{ cloudflare_zone }}"
+      - "NEXTAUTH_SECRET={{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
+      - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      - "SIGNING_PASSPHRASE={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      # SMTP is optional. If left blank, in-app signature requests
+      # appear in the recipient's Documenso dashboard but no email
+      # is sent. Operator usually fills these via dashboard-sync's
+      # SMTP propagation if a global SMTP is configured.
+      - "SMTP_TRANSPORT="
+      - "SMTP_HOST="
+      - "SMTP_PORT=587"
+      - "SMTP_USERNAME="
+      - "SMTP_PASSWORD="
+      - "SMTP_FROM_NAME=Documenso"
+      - "SMTP_FROM_ADDRESS="
+    en:
+      display_name: Documenso (deprecated)
+      what_it_is: "**DEPRECATED** as of 2026-04-29 -- kept in catalog for the migration window. New deploys should use **DocuSeal** instead. Open-source document signing
+        -- upload a PDF, place signature fields, send for signature. Keycloak SSO pre-wired."
+      replaces: ["DocuSign", "HelloSign", "PandaDoc", "Adobe Sign"]
+      compose_description: |
+        DEPRECATED: use DocuSeal instead. Kept for migration window only.
+
+        https://catena.run/docs/apps/documenso/
+      setup_steps: |
+        > **Deprecated:** new deploys should use **DocuSeal** at `sign.<your-domain>`. This entry is retained at `sign-legacy.<your-domain>` for the migration window. To migrate, deploy DocuSeal, recreate your templates there, then delete this Documenso compose.
+
+        1. Click **Deploy**. Environment defaults are pre-filled; the first boot mints a self-signed signing certificate automatically (~30 s).
+        2. Visit your Documenso domain -> click **Sign in with Keycloak**. The first user to sign in becomes the team admin.
+        3. *(Optional)* Replace the auto-generated signing certificate with one issued by a trusted Certificate Authority for legally-binding signatures. Until then, signed PDFs render correctly but Adobe / Acrobat / browsers will mark the signature as "issued by an untrusted root." Contact your operator to install a real cert into the `documenso-signing` Docker volume.
+      extra_notes: |
+        ### Self-signed cert vs trusted-CA cert
+
+        The first deploy mints a 10-year self-signed PKCS12 cert so
+        Documenso starts out of the box. Documents you sign with this
+        cert are cryptographically valid (the math works) but the
+        signing identity is **your VPS hostname**, not your business
+        identity, and Adobe Acrobat / browsers display a yellow
+        warning banner ("not from a trusted root CA") on every
+        verification.
+
+        For internal-only workflows (HR forms, vendor intake, NDAs
+        between parties who already trust each other), the self-
+        signed cert is fine. For client-facing signed contracts,
+        contact your operator to install a CA-issued cert. The
+        upgrade is non-disruptive -- replace `cert.p12` in the
+        `documenso-signing` volume, restart the Documenso container.
+
+        ### SMTP
+
+        Without SMTP configured, signature-request emails are not
+        sent. Recipients still see pending requests in their
+        Documenso dashboard if they sign in. To enable email, fill
+        the `SMTP_*` env vars (your transactional-email provider's
+        documentation has the host/port/credentials).
+    fr:
+      display_name: Documenso (déprécié)
+      what_it_is: "**DÉPRÉCIÉ** depuis 2026-04-29 -- conservé au catalogue le temps de la migration. Les nouveaux déploiements doivent utiliser **DocuSeal**. Signature
+        électronique de documents open-source -- téléversez un PDF, placez les champs de signature, envoyez pour signature. Keycloak SSO pré-câblé."
+      replaces: ["DocuSign", "HelloSign", "PandaDoc", "Adobe Sign"]
+      compose_description: |
+        DÉPRÉCIÉ : utilisez DocuSeal. Conservé pour la migration uniquement.
+
+        https://catena.run/docs/apps/documenso/
+      setup_steps: |
+        > **Déprécié :** les nouveaux déploiements doivent utiliser **DocuSeal** à `sign.<votre-domaine>`. Cette entrée est conservée à `sign-legacy.<votre-domaine>` le temps de la migration. Pour migrer : déployez DocuSeal, recréez vos templates, puis supprimez ce compose Documenso.
+
+        1. Cliquez **Deploy**. Les valeurs par défaut sont pré-remplies ; le premier démarrage génère automatiquement un certificat de signature auto-signé (~30 s).
+        2. Visitez votre domaine Documenso -> cliquez **Se connecter avec Keycloak**. Le premier utilisateur devient l'admin de l'équipe.
+        3. *(Optionnel)* Remplacez le certificat auto-signé par un certificat émis par une autorité de certification de confiance pour les signatures à valeur légale. En attendant, les PDF signés s'affichent correctement, mais Adobe / Acrobat / les navigateurs marqueront la signature comme "émise par une racine non fiable". Contactez votre opérateur pour installer un vrai certificat dans le volume Docker `documenso-signing`.
+      extra_notes: |
+        ### Certificat auto-signé vs certificat d'une AC de confiance
+
+        Le premier déploiement génère un certificat PKCS12
+        auto-signé valide 10 ans pour que Documenso démarre tel
+        quel. Les documents signés avec ce certificat sont
+        cryptographiquement valides (la mathématique fonctionne),
+        mais l'identité de signature est **le nom d'hôte de votre
+        VPS**, pas l'identité de votre entreprise, et Adobe Acrobat
+        et les navigateurs affichent un bandeau jaune ("pas d'une
+        racine de confiance") à chaque vérification.
+
+        Pour les workflows internes (formulaires RH, prise en
+        charge fournisseur, NDA entre parties déjà en confiance), le
+        certificat auto-signé suffit. Pour les contrats signés
+        face client, contactez votre opérateur pour installer un
+        certificat émis par une AC. La mise à niveau ne perturbe
+        rien -- remplacez `cert.p12` dans le volume
+        `documenso-signing`, redémarrez le conteneur Documenso.
+
+        ### SMTP
+
+        Sans SMTP configuré, les e-mails de demande de signature
+        ne sont pas envoyés. Les destinataires voient quand même
+        les demandes en attente dans leur tableau de bord Documenso
+        s'ils s'y connectent. Pour activer les e-mails, renseignez
+        les variables `SMTP_*` (la documentation de votre
+        fournisseur d'e-mails transactionnels a l'hôte, le port et
+        les identifiants).
+
+  - id: outline
+    app_name: outline
+    upstream_url: https://www.getoutline.com/
+    sso_mode: pre-wired
+    domain_host: "wiki.{{ cloudflare_zone }}"
+    domain_service: outline
+    domain_port: 3000
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/outline.compose.yml"
+    env_defaults:
+      - "OUTLINE_HOSTNAME=wiki.{{ cloudflare_zone }}"
+      - "OUTLINE_SECRET_KEY={{ lookup('password', '/dev/null length=64 chars=hexdigits') | lower }}"
+      - "OUTLINE_UTILS_SECRET={{ lookup('password', '/dev/null length=64 chars=hexdigits') | lower }}"
+      - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+    en:
+      display_name: Outline
+      what_it_is: Team wiki / knowledge base. Notion-style pages, collections, nested docs. Keycloak SSO pre-wired.
+      replaces: ["Notion", "Confluence", "Google Sites"]
+      compose_description: |
+        Team wiki + knowledge base. Keycloak SSO pre-wired. Replaces Notion / Confluence.
+
+        https://catena.run/docs/apps/outline/
+      setup_steps: |
+        1. Click **Deploy**. Environment defaults are all pre-filled.
+        2. Wait ~1 min for the first boot.
+        3. Visit your Outline domain -> click **Sign in with Keycloak**. The first user to sign in becomes the workspace admin.
+      extra_notes: ""
+    fr:
+      display_name: Outline
+      what_it_is: Wiki d'équipe / base de connaissances. Pages façon Notion, collections, documents imbriqués. Keycloak SSO pré-câblé.
+      replaces: ["Notion", "Confluence", "Google Sites"]
+      compose_description: |
+        Wiki d'équipe + base de connaissances. Keycloak SSO pré-câblé. Remplace Notion / Confluence.
+
+        https://catena.run/docs/apps/outline/
+      setup_steps: |
+        1. Cliquez **Deploy**. Les valeurs par défaut de l'Environment sont pré-remplies.
+        2. Patientez ~1 min pour le premier démarrage.
+        3. Visitez votre domaine Outline -> cliquez **Se connecter avec Keycloak**. Le premier utilisateur devient l'admin du workspace.
+      extra_notes: ""
+
+  - id: espocrm
+    app_name: espocrm
+    upstream_url: https://www.espocrm.com/
+    sso_mode: post-deploy-ui
+    domain_host: "crm.{{ cloudflare_zone }}"
+    domain_service: espocrm
+    domain_port: 80
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/espocrm.compose.yml"
+    env_defaults:
+      - "ESPOCRM_HOSTNAME=crm.{{ cloudflare_zone }}"
+      - "ESPOCRM_ADMIN_USERNAME=admin"
+      - "ESPOCRM_ADMIN_PASSWORD={{ lookup('password', '/dev/null length=24 chars=ascii_letters,digits') }}"
+      - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      - "DB_ROOT_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      # OIDC integration vars consumed via the post-deploy admin UI
+      # toggle (Administration -> Authentication -> Method: OIDC).
+      # Not env-managed: EspoCRM persists the values into its own DB
+      # once the admin saves them.
+      - "OIDC_CLIENT_ID=espocrm"
+      - "OIDC_CLIENT_SECRET="
+      - "OIDC_ISSUER_URL=https://{{ keycloak_hostname | default('auth.' ~ cloudflare_zone) }}/realms/{{ keycloak_realm | default('vps') }}"
+    en:
+      display_name: EspoCRM
+      what_it_is: Default CRM in the stack. Contacts, accounts, opportunities, leads, calendar, email integration, mass mail, workflow automation. Native OIDC
+        via post-deploy toggle.
+      replaces: ["Salesforce", "HubSpot", "Zoho CRM", "Pipedrive"]
+      compose_description: |
+        Open-source CRM (default). Replaces Salesforce / HubSpot / Zoho.
+
+        https://catena.run/docs/apps/espocrm/
+      setup_steps: |
+        1. Click **Deploy**. Wait ~1 min.
+        2. Visit your EspoCRM domain. Sign in as `ESPOCRM_ADMIN_USERNAME` / `ESPOCRM_ADMIN_PASSWORD` from the Environment tab.
+        3. *(Optional)* Enable Keycloak SSO: **Administration** -> **Authentication** -> set **Method** to **OIDC** -> paste:
+           - **Client ID:** `OIDC_CLIENT_ID` from Environment (`espocrm`)
+           - **Client Secret:** `OIDC_CLIENT_SECRET` from Environment (ask your operator to mint one in Keycloak if blank)
+           - **Authorization Endpoint:** `<OIDC_ISSUER_URL>/protocol/openid-connect/auth`
+           - **Token Endpoint:** `<OIDC_ISSUER_URL>/protocol/openid-connect/token`
+           - **JSON Web Key Set Endpoint:** `<OIDC_ISSUER_URL>/protocol/openid-connect/certs`
+           - **Username Claim:** `preferred_username`
+           - Save. The login page gains a **Sign in with Keycloak** button. Local admin login keeps working as a break-glass.
+      extra_notes: |
+        ### Why EspoCRM is the default
+
+        It is the only fully open-source CRM in this catalog with native OIDC in the community edition (no Pro tier upgrade), pre-built mobile apps, and an established record of stable upgrades. Twenty is the alternative if you prefer its modern Notion-like UI; both are kept in the catalog so you can pick.
+
+        ### Resource note
+
+        EspoCRM runs as PHP-Apache + MariaDB + a cron sidecar. Plan for ~1 GB RAM at idle, ~2 GB under bulk-import or mass-email workloads.
+    fr:
+      display_name: EspoCRM
+      what_it_is: CRM par défaut de la stack. Contacts, comptes, opportunités, prospects, calendrier, intégration email, mass mail, automatisation. OIDC natif
+        via un bouton post-déploiement.
+      replaces: ["Salesforce", "HubSpot", "Zoho CRM", "Pipedrive"]
+      compose_description: |
+        CRM open-source (par défaut). Remplace Salesforce / HubSpot / Zoho.
+
+        https://catena.run/docs/apps/espocrm/
+      setup_steps: |
+        1. Cliquez **Deploy**. Patientez ~1 min.
+        2. Visitez votre domaine EspoCRM. Connectez-vous avec `ESPOCRM_ADMIN_USERNAME` / `ESPOCRM_ADMIN_PASSWORD` de l'onglet Environment.
+        3. *(Optionnel)* Activez Keycloak SSO : **Administration** -> **Authentication** -> réglez **Method** sur **OIDC** -> collez :
+           - **Client ID :** `OIDC_CLIENT_ID` depuis Environment (`espocrm`)
+           - **Client Secret :** `OIDC_CLIENT_SECRET` depuis Environment (demandez à votre opérateur de le générer côté Keycloak si vide)
+           - **Authorization Endpoint :** `<OIDC_ISSUER_URL>/protocol/openid-connect/auth`
+           - **Token Endpoint :** `<OIDC_ISSUER_URL>/protocol/openid-connect/token`
+           - **JSON Web Key Set Endpoint :** `<OIDC_ISSUER_URL>/protocol/openid-connect/certs`
+           - **Username Claim :** `preferred_username`
+           - Validez. La page de connexion affiche **Sign in with Keycloak**. La connexion admin locale continue de fonctionner comme issue de secours.
+      extra_notes: |
+        ### Pourquoi EspoCRM est le CRM par défaut
+
+        C'est le seul CRM entièrement open-source du catalogue avec OIDC natif en édition communautaire (sans palier Pro), des apps mobiles existantes et un historique stable de mises à jour. Twenty est l'alternative si vous préférez son UI moderne façon Notion ; les deux restent au catalogue pour vous laisser choisir.
+
+        ### Ressources
+
+        EspoCRM tourne en PHP-Apache + MariaDB + un cron sidecar. Prévoyez ~1 GB RAM au repos, ~2 GB sous import en masse ou envoi mass-email.
+
+  - id: twenty
+    app_name: twenty
+    upstream_url: https://twenty.com/
+    sso_mode: post-deploy-ui
+    domain_host: "twenty.{{ cloudflare_zone }}"
+    domain_service: server
+    domain_port: 3000
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/twenty.compose.yml"
+    env_defaults:
+      - "TWENTY_HOSTNAME=twenty.{{ cloudflare_zone }}"
+      - "TWENTY_APP_SECRET={{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
+      - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+    en:
+      display_name: Twenty
+      what_it_is: Modern open-source CRM. Contacts, companies, opportunities, email sync, pipelines. Alternative to EspoCRM (the default CRM).
+      replaces: ["Salesforce", "HubSpot", "Pipedrive"]
+      compose_description: |
+        Modern open-source CRM (alternative to EspoCRM). Replaces Salesforce / HubSpot.
+
+        https://catena.run/docs/apps/twenty/
+      setup_steps: |
+        1. Click **Deploy**. Wait ~1 min.
+        2. Visit your Twenty domain and sign up to create the initial workspace + admin user.
+        3. *(Optional)* Enable Keycloak SSO: **Settings** -> **Security** -> **Single sign-on** -> paste `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL` from the Environment tab. Save.
+      extra_notes: |
+        **EspoCRM vs Twenty.** EspoCRM is this stack's default CRM (mature, native OIDC, mobile apps). Twenty is offered as an alternative for clients who prefer its Notion-style UI; both can be deployed side-by-side. The default `crm.<your-domain>` host is reserved for EspoCRM -- Twenty defaults to `twenty.<your-domain>`.
+    fr:
+      display_name: Twenty
+      what_it_is: CRM moderne open-source. Contacts, entreprises, opportunités, synchronisation email, pipelines. Alternative à EspoCRM (le CRM par défaut).
+      replaces: ["Salesforce", "HubSpot", "Pipedrive"]
+      compose_description: |
+        CRM moderne open-source (alternative à EspoCRM). Remplace Salesforce / HubSpot.
+
+        https://catena.run/docs/apps/twenty/
+      setup_steps: |
+        1. Cliquez **Deploy**. Patientez ~1 min.
+        2. Visitez votre domaine Twenty et créez le compte initial (workspace + admin).
+        3. *(Optionnel)* Activez Keycloak SSO : **Settings** -> **Security** -> **Single sign-on** -> collez `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL` depuis l'onglet Environment. Validez.
+      extra_notes: |
+        **EspoCRM vs Twenty.** EspoCRM est le CRM par défaut de cette stack (mature, OIDC natif, apps mobiles). Twenty est offert comme alternative pour les clients qui préfèrent son UI façon Notion ; les deux peuvent cohabiter. Le domaine par défaut `crm.<votre-domaine>` est réservé à EspoCRM -- Twenty utilise par défaut `twenty.<votre-domaine>`.
+
+  - id: plane
+    app_name: plane
+    upstream_url: https://plane.so/
+    sso_mode: post-deploy-ui
+    domain_host: "projects.{{ cloudflare_zone }}"
+    domain_service: proxy
+    domain_port: 80
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/plane.compose.yml"
+    env_defaults:
+      - "PLANE_HOSTNAME=projects.{{ cloudflare_zone }}"
+      - "PLANE_SECRET_KEY={{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
+      - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      - "PLANE_MINIO_ACCESS_KEY={{ lookup('password', '/dev/null length=20 chars=ascii_letters,digits') }}"
+      - "PLANE_MINIO_SECRET_KEY={{ lookup('password', '/dev/null length=40 chars=ascii_letters,digits') }}"
+    en:
+      display_name: Plane
+      what_it_is: Open-source project management -- issues, cycles, modules, pages, workspaces.
+      replaces: ["Jira", "Linear", "Asana", "ClickUp"]
+      compose_description: |
+        Open-source project management. Replaces Jira / Linear / Asana.
+
+        https://catena.run/docs/apps/plane/
+      setup_steps: |
+        1. Click **Deploy**. Wait ~2-3 min (multi-service stack with MinIO).
+        2. Visit your Plane domain and sign up to create the instance admin + first workspace.
+        3. *(Optional)* Enable Keycloak SSO: while signed in, visit `https://projects.<your-domain>/god-mode` -> **Authentication** -> **OpenID Connect** -> paste `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL` from the Environment tab. Save.
+      extra_notes: ""
+    fr:
+      display_name: Plane
+      what_it_is: Gestion de projet open-source -- issues, cycles, modules, pages, workspaces.
+      replaces: ["Jira", "Linear", "Asana", "ClickUp"]
+      compose_description: |
+        Gestion de projet open-source. Remplace Jira / Linear / Asana.
+
+        https://catena.run/docs/apps/plane/
+      setup_steps: |
+        1. Cliquez **Deploy**. Patientez ~2-3 min (pile multi-services avec MinIO).
+        2. Visitez votre domaine Plane et créez le compte admin initial + le premier workspace.
+        3. *(Optionnel)* Activez Keycloak SSO : une fois connecté, visitez `https://projects.<votre-domaine>/god-mode` -> **Authentication** -> **OpenID Connect** -> collez `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL` depuis l'onglet Environment. Validez.
+      extra_notes: ""
+
+  - id: cal-diy
+    app_name: cal-diy
+    upstream_url: https://github.com/calcom/cal.diy
+    sso_mode: none
+    domain_host: "cal.{{ cloudflare_zone }}"
+    domain_service: caldiy
+    domain_port: 3000
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/cal-diy.compose.yml"
+    env_defaults:
+      - "CALDIY_HOSTNAME=cal.{{ cloudflare_zone }}"
+      - "NEXTAUTH_SECRET={{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
+      - "CALENDSO_ENCRYPTION_KEY={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+    en:
+      display_name: cal.diy
+      what_it_is: Single-provider booking page with Stripe-paid bookings, calendar app store (Google / Outlook / Apple / CalDAV), and a polished public booking flow. Self-hosted build of Cal.com.
+      replaces: ["Calendly", "Acuity", "SavvyCal", "Cal.com Cloud"]
+      compose_description: |
+        Open-source single-provider booking page with paid bookings + calendar app store. Replaces Calendly / Acuity.
+
+        https://catena.run/docs/apps/cal-diy/
+      setup_steps: |
+        1. Click **Deploy**. Wait ~2-3 min for the first boot (Prisma migrations run on the entrypoint).
+        2. Visit your cal.diy domain and complete the setup wizard (admin email, password, name). The wizard creates an account with role `ADMIN` and `identityProvider=CAL`.
+        3. **Unblock the admin login (one-time).** The legacy image force-downgrades any `IdentityProvider=CAL` admin to `INACTIVE_ADMIN` until 2FA is enabled, which makes the post-login redirect bounce. Open the Dokploy **Terminal** on the `db` service and run:
+           ```sql
+           UPDATE "users" SET role='USER' WHERE email='<your-admin-email>';
+           ```
+           Sign in. Open **Settings -> Security -> Two-factor authentication**, enable 2FA. Then back in the terminal:
+           ```sql
+           UPDATE "users" SET role='ADMIN' WHERE email='<your-admin-email>';
+           ```
+        4. Connect a calendar: **Settings -> Apps -> Calendars** -> install Google Calendar / Microsoft / CalDAV / Apple -> authorize.
+        5. *(Optional)* Enable Stripe-paid bookings: **Apps -> Stripe** -> connect a Stripe account -> on each event type, toggle **Requires Payment** and set the price.
+        6. Configure your event types under **Event Types**. Share the public URL `https://cal.<your-domain>/<username>/<event-slug>` with customers.
+      extra_notes: |
+        ### Image situation
+
+        cal.diy is the new MIT-licensed open-source build of Cal.com. Upstream has not yet published a `calcom/cal.diy` Docker image; this template runs the legacy `calcom/cal.com:v6.2.0` image, which still works mechanically but carries commercial code paths (license phone-home, the `INACTIVE_ADMIN` gate above). Once cal.com publishes a clean cal.diy image with the gates removed, the operator can swap the image tag and the wizard-then-SQL dance goes away.
+
+        ### Features removed in the open-source split
+
+        The cal.com `open-source-to-closed-source` rebrand moved the following into the commercial-only Cal.com tier: **Organizations & Teams**, **Routing Forms**, **Workflows** (automated reminders), **Instant Booking**, **AI Phone**, **Insights** (analytics), **API v1**, **SAML/SSO**, admin **Impersonation** + **Booking Audit**. If a workflow needs any of these, run the booking webhook into n8n and rebuild the missing piece there. See your operator before relying on a feature in this list.
+
+        ### Resources
+
+        cal.diy runs Next.js + Postgres in two containers. Plan for ~1-2 GB RAM at rest, slower first boot than most apps in the catalog.
+
+        ### Multi-tenant warning
+
+        Single-tenant deploys only. The community edition has no real org/team coordination. If you need multiple practitioners with shared availability (clinic / salon / repair shop), use [Easy!Appointments](/docs/apps/easyappointments/) instead.
+    fr:
+      display_name: cal.diy
+      what_it_is: Page de réservation mono-prestataire avec paiements Stripe, magasin d'apps calendrier (Google / Outlook / Apple / CalDAV), et un parcours de réservation public soigné. Version auto-hébergée de Cal.com.
+      replaces: ["Calendly", "Acuity", "SavvyCal", "Cal.com Cloud"]
+      compose_description: |
+        Page de réservation open-source mono-prestataire avec paiements et apps calendrier. Remplace Calendly / Acuity.
+
+        https://catena.run/docs/apps/cal-diy/
+      setup_steps: |
+        1. Cliquez **Deploy**. Patientez ~2-3 min au premier démarrage (les migrations Prisma s'exécutent au démarrage du conteneur).
+        2. Visitez votre domaine cal.diy et complétez l'assistant initial (courriel admin, mot de passe, nom). L'assistant crée un compte avec le rôle `ADMIN` et `identityProvider=CAL`.
+        3. **Débloquer la connexion admin (une seule fois).** L'image héritée force tout admin `identityProvider=CAL` à `INACTIVE_ADMIN` tant que la 2FA n'est pas activée, ce qui fait rebondir la redirection après connexion. Ouvrez le **Terminal** Dokploy sur le service `db` et exécutez :
+           ```sql
+           UPDATE "users" SET role='USER' WHERE email='<votre-courriel-admin>';
+           ```
+           Connectez-vous. Ouvrez **Settings -> Security -> Two-factor authentication**, activez la 2FA. Puis de retour dans le terminal :
+           ```sql
+           UPDATE "users" SET role='ADMIN' WHERE email='<votre-courriel-admin>';
+           ```
+        4. Branchez un calendrier : **Settings -> Apps -> Calendars** -> installez Google Calendar / Microsoft / CalDAV / Apple -> autorisez.
+        5. *(Optionnel)* Activez les réservations payantes Stripe : **Apps -> Stripe** -> connectez un compte Stripe -> sur chaque type d'événement, activez **Requires Payment** et fixez le prix.
+        6. Configurez vos types d'événements sous **Event Types**. Partagez l'URL publique `https://cal.<votre-domaine>/<utilisateur>/<slug-événement>` avec vos clients.
+      extra_notes: |
+        ### Situation de l'image
+
+        cal.diy est le nouveau build open-source sous licence MIT de Cal.com. Aucune image Docker `calcom/cal.diy` n'a encore été publiée par l'amont ; ce template utilise l'image héritée `calcom/cal.com:v6.2.0` qui fonctionne mécaniquement mais embarque encore du code commercial (téléphone-maison de licence, garde `INACTIVE_ADMIN` ci-dessus). Quand cal.com publiera une image cal.diy propre sans les gardes, l'opérateur basculera le tag et la danse assistant-puis-SQL disparaîtra.
+
+        ### Fonctionnalités retirées dans le passage open-source
+
+        Le rebrand cal.com `open-source-to-closed-source` a déplacé en commercial uniquement : **Organizations & Teams**, **Routing Forms**, **Workflows** (rappels automatisés), **Instant Booking**, **AI Phone**, **Insights** (analytique), **API v1**, **SAML/SSO**, **Impersonation** admin + **Booking Audit**. Si votre flux dépend d'un de ces éléments, branchez le webhook de réservation dans n8n et reconstruisez la pièce manquante là. Parlez à votre opérateur avant de compter sur l'un de ces éléments.
+
+        ### Ressources
+
+        cal.diy tourne sur Next.js + Postgres dans deux conteneurs. Prévoyez ~1-2 GB de RAM au repos, premier démarrage plus lent que la plupart des apps du catalogue.
+
+        ### Avertissement multi-locataire
+
+        Déploiements mono-locataire uniquement. La version communautaire n'a pas de vraie coordination d'organisation/équipe. Si vous avez besoin de plusieurs prestataires avec disponibilités partagées (clinique / salon / atelier), utilisez plutôt [Easy!Appointments](/docs/apps/easyappointments/).
+
+  - id: zammad
+    app_name: zammad
+    upstream_url: https://zammad.com/
+    sso_mode: post-deploy-ui
+    domain_host: "help.{{ cloudflare_zone }}"
+    domain_service: zammad-nginx
+    domain_port: 8080
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/zammad.compose.yml"
+    env_defaults:
+      - "ZAMMAD_HOSTNAME=help.{{ cloudflare_zone }}"
+      - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+    en:
+      display_name: Zammad
+      what_it_is: Ticket-first help desk. Email, Telegram, social channels, SLAs, knowledge base. Native OIDC.
+      replaces: ["Zendesk", "Freshdesk", "Jira Service Desk"]
+      compose_description: |
+        Ticket-first help desk. Replaces Zendesk / Freshdesk.
+
+        https://catena.run/docs/apps/zammad/
+      setup_steps: |
+        1. Click **Deploy**. First boot is slow (2-3 min) -- Elasticsearch and Rails migrations run on startup.
+        2. Visit your Zammad domain. Complete the setup wizard (admin account, organization name).
+        3. *(Optional)* Enable Keycloak SSO: **Settings** -> **Security** -> **Third-party authentication** -> **OpenID Connect** -> paste `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL` from the Environment tab. Save.
+      extra_notes: |
+        **Resource note:** Zammad bundles Elasticsearch which reserves ~1.5 GB RAM. Plan for a ≥4 GB VPS if you run Zammad alongside other apps.
+    fr:
+      display_name: Zammad
+      what_it_is: Helpdesk orienté tickets. Email, Telegram, canaux sociaux, SLA, base de connaissances. OIDC natif.
+      replaces: ["Zendesk", "Freshdesk", "Jira Service Desk"]
+      compose_description: |
+        Helpdesk orienté tickets. Remplace Zendesk / Freshdesk.
+
+        https://catena.run/docs/apps/zammad/
+      setup_steps: |
+        1. Cliquez **Deploy**. Le premier démarrage est lent (2-3 min) -- Elasticsearch et les migrations Rails se lancent au démarrage.
+        2. Visitez votre domaine Zammad. Complétez l'assistant de configuration (compte admin, nom d'organisation).
+        3. *(Optionnel)* Activez Keycloak SSO : **Settings** -> **Security** -> **Third-party authentication** -> **OpenID Connect** -> collez `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL` depuis l'onglet Environment. Validez.
+      extra_notes: |
+        **Ressources :** Zammad intègre Elasticsearch qui réserve ~1,5 GB de RAM. Prévoyez un VPS ≥4 GB si vous lancez Zammad avec d'autres apps.
+
+  - id: chatwoot
+    app_name: chatwoot
+    upstream_url: https://www.chatwoot.com/
+    sso_mode: none
+    domain_host: "support.{{ cloudflare_zone }}"
+    domain_service: rails
+    domain_port: 3000
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/chatwoot.compose.yml"
+    env_defaults:
+      - "CHATWOOT_HOSTNAME=support.{{ cloudflare_zone }}"
+      - "SECRET_KEY_BASE={{ lookup('password', '/dev/null length=128 chars=hexdigits') | lower }}"
+      - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+    en:
+      display_name: Chatwoot
+      what_it_is: Conversation-first omnichannel inbox. Email, live-chat widget, WhatsApp, Facebook, Instagram, Twitter/X in one inbox.
+      replaces: ["Intercom", "Front", "Help Scout (for chat channels)"]
+      compose_description: |
+        Conversation-first omnichannel inbox. Replaces Intercom / Front.
+
+        https://catena.run/docs/apps/chatwoot/
+      setup_steps: |
+        1. Click **Deploy**. Wait ~2 min for the first boot (Rails migrations).
+        2. Visit your Chatwoot domain. Complete the setup wizard to create the first admin account.
+        3. Add channels: **Settings** -> **Inboxes** -> **Add inbox**. Pick the channel (email, website widget, WhatsApp, etc.) and follow the per-channel instructions.
+      extra_notes: |
+        **Note on sign-in:** Chatwoot's community edition doesn't support OIDC/SSO -- agents keep per-app email/password logins. SAML/OIDC is enterprise-only. If SSO matters, consider Zammad instead (trade-off: ticket-first workflow vs Chatwoot's conversation-first inbox).
+    fr:
+      display_name: Chatwoot
+      what_it_is: Boîte de réception omnicanale orientée conversation. Email, widget de chat, WhatsApp, Facebook, Instagram, Twitter/X en une seule vue.
+      replaces: ["Intercom", "Front", "Help Scout (canaux de chat)"]
+      compose_description: |
+        Boîte omnicanale orientée conversation. Remplace Intercom / Front.
+
+        https://catena.run/docs/apps/chatwoot/
+      setup_steps: |
+        1. Cliquez **Deploy**. Patientez ~2 min le premier démarrage (migrations Rails).
+        2. Visitez votre domaine Chatwoot. Complétez l'assistant pour créer le premier admin.
+        3. Ajoutez des canaux : **Settings** -> **Inboxes** -> **Add inbox**. Choisissez le canal (email, widget, WhatsApp, etc.) et suivez les instructions.
+      extra_notes: |
+        **À propos de la connexion :** l'édition communautaire de Chatwoot ne supporte pas OIDC/SSO -- chaque agent garde un email/mot de passe spécifique à l'app. Le SSO SAML/OIDC est enterprise uniquement. Si le SSO est important, envisagez Zammad (compromis : flux orienté ticket au lieu de l'inbox orienté conversation de Chatwoot).
+
+  - id: wordpress
+    app_name: wordpress
+    upstream_url: https://wordpress.org/
+    sso_mode: post-deploy-ui
+    domain_host: "www.{{ cloudflare_zone }}"
+    domain_service: nginx
+    domain_port: 80
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/wordpress.compose.yml"
+    env_managed_keys:
+      - WORDPRESS_HOSTNAME
+      - WPMS_SMTP_PASS
+    env_defaults:
+      - "WORDPRESS_HOSTNAME=www.{{ cloudflare_zone }}"
+      - "WPMS_SMTP_PASS={{ vault_smtp_password | default('') }}"
+      - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      - "DB_ROOT_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+    en:
+      display_name: WordPress
+      what_it_is: Production-ready public CMS / website platform with FastCGI cache, Redis object cache, and a curated free-tier plugin set pre-installed. The
+        site serves anonymously; admin sign-in runs on /wp-admin and can be wired to Keycloak via a plugin.
+      replaces: ["Wix", "Squarespace", "self-hosted Drupal"]
+      compose_description: |
+        Production-ready website / CMS with FastCGI cache + Redis. Replaces Wix / Squarespace.
+
+        https://catena.run/docs/apps/wordpress/
+      setup_steps: |
+        1. Click **Deploy**. Wait ~1 min for MariaDB + Redis + nginx + WordPress to initialize.
+        2. Visit your WordPress domain. Run through the install wizard (site title, admin username, admin password, email).
+        3. After the install wizard completes, the next operator converge auto-installs and configures the curated plugin set: kadence-blocks, performance-lab + its seven feature modules (auto-sizes, dominant-color-images, embed-optimizer, image-prioritizer, optimization-detective, speculation-rules, webp-uploads), nginx-cache-purge-and-preload (NPP -- purges + re-warms the FastCGI cache via your Rank Math sitemap), redis-cache (wired to the bundled Redis), wp-mail-smtp (wired to your operator-configured SMTP), wp-mail-logging, complianz-gdpr, wp-consent-api, seo-by-rank-math, and Fluent Forms.
+        4. Visit `/wp-admin/admin.php?page=rank-math` and `/wp-admin/admin.php?page=cmplz-wizard` to run the Rank Math + Complianz first-run wizards. Their answers are site-specific (industry, EU/non-EU, etc.) and intentionally not pre-filled.
+        5. *(Optional)* Wire `/wp-admin` login to Keycloak: **Plugins** -> **Add New** -> search `OpenID Connect Generic` -> **Install** -> **Activate**. Go to **Settings** -> **OpenID Connect Client** and fill:
+           - **Client ID:** `OIDC_CLIENT_ID` from Environment
+           - **Client Secret:** `OIDC_CLIENT_SECRET`
+           - **Login Endpoint URL:** `<OIDC_ISSUER_URL>/authorize/`
+           - **Userinfo Endpoint URL:** `<OIDC_ISSUER_URL>/userinfo/`
+           - **Token Validation Endpoint URL:** `<OIDC_ISSUER_URL>/token/`
+           - **Identity Key:** `preferred_username`
+           - **Link Existing Users:** ✔
+
+           Save. The login page gains a **Login with OpenID Connect** button. The public-facing site stays anonymous and indexable.
+      extra_notes: |
+        **Stack.** WordPress runs as nginx + php-fpm + MariaDB + Redis. Nginx serves static assets directly, caches PHP responses with FastCGI cache (purged automatically by NPP on edit/publish, then re-warmed via your sitemap), and proxies the rest to php-fpm. Redis backs the WordPress object cache. Sized for a single-VPS deploy; for traffic spikes scale vertically.
+
+        **Split-auth note.** Public pages (the website itself) are served anonymously -- search engines crawl normally, visitors don't see Keycloak. Only `/wp-admin` goes through the optional OIDC plugin for admin/editor logins. That's what makes WordPress on this stack a hybrid: reader-facing but SSO-managed for staff.
+    fr:
+      display_name: WordPress
+      what_it_is: Plateforme CMS / site web public prête pour la production, avec cache FastCGI, cache d'objets Redis et un ensemble de plugins gratuits curatés
+        pré-installés. Le site est accessible anonymement ; la connexion admin sur /wp-admin peut être câblée à Keycloak via un plugin.
+      replaces: ["Wix", "Squarespace", "Drupal auto-hébergé"]
+      compose_description: |
+        Site web / CMS prêt pour la production avec cache FastCGI + Redis. Remplace Wix / Squarespace.
+
+        https://catena.run/docs/apps/wordpress/
+      setup_steps: |
+        1. Cliquez **Deploy**. Patientez ~1 min le temps que MariaDB + Redis + nginx + WordPress s'initialisent.
+        2. Visitez votre domaine WordPress. Suivez l'assistant d'installation (titre du site, admin, mot de passe, email).
+        3. Une fois l'assistant terminé, le prochain converge opérateur installe et configure automatiquement la liste curatée : kadence-blocks, performance-lab et ses sept modules (auto-sizes, dominant-color-images, embed-optimizer, image-prioritizer, optimization-detective, speculation-rules, webp-uploads), nginx-cache-purge-and-preload (NPP -- purge le cache FastCGI à la publication puis le réchauffe via votre sitemap Rank Math), redis-cache (câblé au Redis embarqué), wp-mail-smtp (câblé au SMTP configuré côté opérateur), wp-mail-logging, complianz-gdpr, wp-consent-api, seo-by-rank-math, et Fluent Forms.
+        4. Visitez `/wp-admin/admin.php?page=rank-math` et `/wp-admin/admin.php?page=cmplz-wizard` pour exécuter les assistants de première utilisation Rank Math + Complianz. Leurs réponses dépendent du site (secteur, UE / hors-UE, etc.) et ne sont volontairement pas pré-remplies.
+        5. *(Optionnel)* Connectez `/wp-admin` à Keycloak : **Extensions** -> **Ajouter** -> chercher `OpenID Connect Generic` -> **Installer** -> **Activer**. Puis **Réglages** -> **OpenID Connect Client** et remplissez :
+           - **Client ID :** `OIDC_CLIENT_ID` depuis Environment
+           - **Client Secret :** `OIDC_CLIENT_SECRET`
+           - **Login Endpoint URL :** `<OIDC_ISSUER_URL>/authorize/`
+           - **Userinfo Endpoint URL :** `<OIDC_ISSUER_URL>/userinfo/`
+           - **Token Validation Endpoint URL :** `<OIDC_ISSUER_URL>/token/`
+           - **Identity Key :** `preferred_username`
+           - **Link Existing Users :** ✔
+
+           Validez. La page de connexion affiche un bouton **Login with OpenID Connect**. Le site public reste accessible anonymement et indexable.
+      extra_notes: |
+        **Stack.** WordPress tourne en nginx + php-fpm + MariaDB + Redis. Nginx sert directement les ressources statiques, met en cache les réponses PHP avec son cache FastCGI (purgé automatiquement par NPP à chaque édition / publication, puis réchauffé via le sitemap), et délègue le reste à php-fpm. Redis sert de cache d'objets WordPress. Dimensionné pour un VPS unique ; pour absorber un pic de trafic, scaler verticalement.
+
+        **Auth mixte.** Les pages publiques du site sont servies anonymement -- les moteurs de recherche crawlent normalement, les visiteurs ne voient pas Keycloak. Seul `/wp-admin` passe par le plugin OIDC optionnel pour les connexions admin/éditeur. C'est ce qui rend WordPress sur cette stack hybride : tourné vers les lecteurs mais administré en SSO.
+
+  - id: n8n
+    app_name: n8n
+    upstream_url: https://n8n.io/
+    sso_mode: none
+    domain_host: "automate.{{ cloudflare_zone }}"
+    domain_service: n8n
+    domain_port: 5678
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/n8n.compose.yml"
+    env_defaults:
+      - "N8N_HOSTNAME=automate.{{ cloudflare_zone }}"
+      - "N8N_TIMEZONE=UTC"
+      - "N8N_ENCRYPTION_KEY={{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
+      - "N8N_JWT_SECRET={{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
+      - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+    en:
+      display_name: n8n
+      what_it_is: Workflow automation -- visually chain hundreds of integrations (APIs, apps, databases) into no-code/low-code workflows.
+      replaces: ["Zapier", "Make (Integromat)", "Tray.io"]
+      compose_description: |
+        Workflow automation (400+ integrations). Replaces Zapier / Make.
+
+        https://catena.run/docs/apps/n8n/
+      setup_steps: |
+        1. Click **Deploy**. Wait ~1 min for Postgres + n8n to initialize.
+        2. Visit your n8n domain and create the owner account via the setup wizard.
+        3. Invite additional users: **Settings** -> **Users** -> **Invite**. Each user receives an email invite.
+        4. Start building workflows: **Workflows** -> **+ Add Workflow**. Browse the integrations library for pre-built nodes.
+      extra_notes: |
+        **Note on sign-in.** n8n's community edition uses email/password user management with invite flows. OIDC and SAML are enterprise-gated, so SSO isn't available here -- each user maintains a per-app login. Fine for an automation team of 1-5 people.
+    fr:
+      display_name: n8n
+      what_it_is: Automatisation de flux de travail -- enchaînez visuellement des centaines d'intégrations (APIs, apps, bases de données) en workflows
+        no-code/low-code.
+      replaces: ["Zapier", "Make (Integromat)", "Tray.io"]
+      compose_description: |
+        Automatisation de workflows (400+ intégrations). Remplace Zapier / Make.
+
+        https://catena.run/docs/apps/n8n/
+      setup_steps: |
+        1. Cliquez **Deploy**. Patientez ~1 min le temps que Postgres + n8n s'initialisent.
+        2. Visitez votre domaine n8n et créez le compte propriétaire via l'assistant.
+        3. Invitez d'autres utilisateurs : **Settings** -> **Users** -> **Invite**. Chaque utilisateur reçoit une invitation par courriel.
+        4. Créez des workflows : **Workflows** -> **+ Add Workflow**. Parcourez la bibliothèque d'intégrations pour les nœuds prêts à l'emploi.
+      extra_notes: |
+        **À propos de la connexion.** L'édition communautaire de n8n utilise email/mot de passe avec des invitations. OIDC et SAML sont enterprise, donc le SSO n'est pas disponible ici -- chaque utilisateur garde une connexion spécifique. Convient à une équipe d'automatisation de 1-5 personnes.
+
+  - id: erpnext
+    app_name: erpnext
+    upstream_url: https://erpnext.com/
+    sso_mode: post-deploy-ui
+    domain_host: "erp.{{ cloudflare_zone }}"
+    domain_service: frontend
+    domain_port: 8080
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/erpnext.compose.yml"
+    env_defaults:
+      - "ERPNEXT_HOSTNAME=erp.{{ cloudflare_zone }}"
+      - "ERPNEXT_ADMIN_PASSWORD={{ lookup('password', '/dev/null length=24 chars=ascii_letters,digits') }}"
+      - "DB_ROOT_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+    en:
+      display_name: ERPNext
+      what_it_is: Full open-source ERP suite -- accounting, inventory, HR/payroll, CRM, manufacturing, projects, and a built-in website/e-commerce module.
+      replaces: ["SAP Business One", "Odoo", "Oracle NetSuite"]
+      compose_description: |
+        Open-source ERP (accounting/inventory/HR/CRM/manufacturing). Replaces SAP / Odoo / NetSuite.
+
+        https://catena.run/docs/apps/erpnext/
+      setup_steps: |
+        1. Click **Deploy**. First boot takes 5-10 min -- the site must be created, MariaDB initialized, Python apps installed. Watch the `create-site` container logs in Dokploy if you want to follow along.
+        2. Visit your ERPNext domain. Sign in as `Administrator` / `ERPNEXT_ADMIN_PASSWORD` from the Environment tab.
+        3. Complete the setup wizard: company name, fiscal year, base currency, chart of accounts template.
+        4. *(Optional)* Enable Keycloak SSO: **Integrations** -> **Social Login Keys** -> **New** -> **Provider: OpenID Connect**. Fill:
+           - **Client ID:** `OIDC_CLIENT_ID` from Environment
+           - **Client Secret:** `OIDC_CLIENT_SECRET`
+           - **Base URL:** `OIDC_ISSUER_URL`
+           - Save. The login page shows **Login with OpenID Connect**.
+      extra_notes: |
+        **Resource note.** ERPNext is heavy -- 10+ containers, ~3 GB RAM + 2 CPUs recommended minimum. Consider running it on a dedicated VPS tier if you also deploy Nextcloud + chat + other apps alongside.
+
+        **Upgrade path.** Major version bumps (v15 -> v16) require `bench migrate`. The compose template leaves `vps.auto-update=patch` on every service so weekly automated updates stay within v15.x.x -- majors are a deliberate operator action, not a 3 a.m. auto-update.
+    fr:
+      display_name: ERPNext
+      what_it_is: Suite ERP open-source complète -- comptabilité, inventaire, RH/paie, CRM, production, projets, et un module site web / e-commerce intégré.
+      replaces: ["SAP Business One", "Odoo", "Oracle NetSuite"]
+      compose_description: |
+        ERP open-source (compta/stock/RH/CRM/prod). Remplace SAP / Odoo / NetSuite.
+
+        https://catena.run/docs/apps/erpnext/
+      setup_steps: |
+        1. Cliquez **Deploy**. Le premier démarrage dure 5-10 min -- le site est créé, MariaDB initialisé, les apps Python installées. Consultez les logs du conteneur `create-site` dans Dokploy si vous voulez suivre.
+        2. Visitez votre domaine ERPNext. Connectez-vous avec `Administrator` / `ERPNEXT_ADMIN_PASSWORD` de l'onglet Environment.
+        3. Complétez l'assistant : nom de société, exercice fiscal, devise, plan comptable.
+        4. *(Optionnel)* Activez Keycloak SSO : **Integrations** -> **Social Login Keys** -> **New** -> **Provider: OpenID Connect**. Remplissez :
+           - **Client ID :** `OIDC_CLIENT_ID` depuis Environment
+           - **Client Secret :** `OIDC_CLIENT_SECRET`
+           - **Base URL :** `OIDC_ISSUER_URL`
+           - Validez. La page de connexion affiche **Login with OpenID Connect**.
+      extra_notes: |
+        **Ressources.** ERPNext est lourd -- 10+ conteneurs, minimum ~3 GB RAM + 2 CPUs recommandés. Envisagez un VPS dédié si vous déployez aussi Nextcloud + chat + autres apps en parallèle.
+
+        **Montées de version.** Les bumps majeurs (v15 -> v16) nécessitent `bench migrate`. Le template laisse `vps.auto-update=patch` sur chaque service : les mises à jour hebdomadaires automatiques restent en v15.x.x -- les majeurs sont une action opérateur délibérée, pas une auto-update à 3 h du matin.
+
+  - id: actualbudget
+    app_name: actualbudget
+    upstream_url: https://actualbudget.org/
+    sso_mode: none
+    domain_host: "budget.{{ cloudflare_zone }}"
+    domain_service: actual
+    domain_port: 5006
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/actualbudget.compose.yml"
+    env_defaults: []
+    en:
+      display_name: Actual Budget
+      what_it_is: Self-hosted personal finance. Envelope budgeting, bank account syncing via SimpleFIN or GoCardless, encrypted end-to-end.
+      replaces: ["YNAB (You Need A Budget)", "Mint", "EveryDollar"]
+      compose_description: |
+        Self-hosted personal finance + envelope budgeting. Replaces YNAB / Mint.
+
+        https://catena.run/docs/apps/actualbudget/
+      setup_steps: |
+        1. Click **Deploy**. Wait ~30 s.
+        2. Visit your Actual Budget domain. Set a server password on first visit (it's stored locally; remember it -- no recovery).
+        3. Create a new budget or import an existing one (file menu -> Import from YNAB4 / YNAB5 / nYNAB).
+        4. *(Optional)* Connect bank accounts via **Settings** -> **Connected Accounts** -> SimpleFIN (USD/CAD, paid) or GoCardless (EUR/GBP, free).
+      extra_notes: |
+        **Note on sign-in.** Actual Budget uses a single shared server password to unlock the UI, not per-user logins. Multi-user is supported at the budget level (share the budget file) but the server auth is a single secret. This matches how the upstream project is designed: typically one household per server. OIDC/SSO isn't supported.
+    fr:
+      display_name: Actual Budget
+      what_it_is: Finances personnelles auto-hébergées. Budgétisation par enveloppes, synchro bancaire via SimpleFIN ou GoCardless, chiffré de bout en bout.
+      replaces: ["YNAB (You Need A Budget)", "Mint", "EveryDollar"]
+      compose_description: |
+        Finances personnelles + budgétisation par enveloppes auto-hébergées. Remplace YNAB / Mint.
+
+        https://catena.run/docs/apps/actualbudget/
+      setup_steps: |
+        1. Cliquez **Deploy**. Patientez ~30 s.
+        2. Visitez votre domaine Actual Budget. Définissez un mot de passe serveur au premier accès (stocké localement ; retenez-le -- pas de récupération).
+        3. Créez un nouveau budget ou importez-en un existant (menu fichier -> Importer depuis YNAB4 / YNAB5 / nYNAB).
+        4. *(Optionnel)* Connectez des comptes bancaires via **Settings** -> **Connected Accounts** -> SimpleFIN (USD/CAD, payant) ou GoCardless (EUR/GBP, gratuit).
+      extra_notes: |
+        **À propos de la connexion.** Actual Budget utilise un mot de passe serveur partagé pour déverrouiller l'UI, pas des connexions par utilisateur. Le multi-utilisateurs fonctionne au niveau du budget (partage de fichier budget) mais l'auth serveur est un secret unique. C'est la conception upstream : typiquement un foyer par serveur. OIDC/SSO non supporté.
+
+  - id: postiz
+    app_name: postiz
+    upstream_url: https://postiz.com/
+    sso_mode: none
+    domain_host: "social.{{ cloudflare_zone }}"
+    domain_service: postiz
+    domain_port: 5000
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/postiz.compose.yml"
+    env_defaults:
+      - "POSTIZ_HOSTNAME=social.{{ cloudflare_zone }}"
+      - "JWT_SECRET={{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
+      - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+    en:
+      display_name: Postiz
+      what_it_is: Schedule and publish social media posts across Twitter/X, LinkedIn, Facebook, Instagram, YouTube, TikTok, and more.
+      replaces: ["Buffer", "Hootsuite", "Later"]
+      compose_description: |
+        Social media scheduling (Twitter/X, LinkedIn, FB, IG, YouTube, TikTok). Replaces Buffer / Hootsuite.
+
+        https://catena.run/docs/apps/postiz/
+      setup_steps: |
+        1. Click **Deploy**. Wait ~1 min.
+        2. Visit your Postiz domain and create the admin account.
+        3. Add each social network's app credentials: **Settings** -> pick the network -> paste your developer-app client ID + secret from the network's developer portal. One-time per network.
+      extra_notes: |
+        **Note on sign-in:** Postiz uses local email/password login. No native OIDC in the current community release. The user count for this tool is typically 1-3 marketing people, so the SSO gap is less impactful than for chat / helpdesk tools.
+    fr:
+      display_name: Postiz
+      what_it_is: Planifier et publier des posts sociaux sur Twitter/X, LinkedIn, Facebook, Instagram, YouTube, TikTok, et d'autres.
+      replaces: ["Buffer", "Hootsuite", "Later"]
+      compose_description: |
+        Planification de publications sociales (Twitter/X, LinkedIn, FB, IG, YouTube, TikTok). Remplace Buffer / Hootsuite.
+
+        https://catena.run/docs/apps/postiz/
+      setup_steps: |
+        1. Cliquez **Deploy**. Patientez ~1 min.
+        2. Visitez votre domaine Postiz et créez le compte admin.
+        3. Ajoutez les identifiants d'application de chaque réseau : **Settings** -> choisissez le réseau -> collez le client ID + secret de votre app développeur depuis le portail du réseau. Une fois par réseau.
+      extra_notes: |
+        **À propos de la connexion :** Postiz utilise un email/mot de passe local. Pas d'OIDC natif dans la version communautaire actuelle. Le nombre d'utilisateurs pour cet outil est typiquement de 1 à 3 personnes en marketing, donc l'absence de SSO est moins impactante que pour les outils de chat / helpdesk.
+
+  - id: easyappointments
+    app_name: easyappointments
+    upstream_url: https://easyappointments.org/
+    sso_mode: none
+    domain_host: "book.{{ cloudflare_zone }}"
+    domain_service: easyappointments
+    domain_port: 80
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/easyappointments.compose.yml"
+    env_defaults:
+      - "EASYAPPOINTMENTS_HOSTNAME=book.{{ cloudflare_zone }}"
+      - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      - "DB_ROOT_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+    en:
+      display_name: Easy!Appointments
+      what_it_is: Customer-facing booking app for one or many providers (clinic, salon, lessons, repair shop). Public booking page; staff calendars; email + SMS reminders; ICS export.
+      replaces: ["Calendly", "Acuity", "SimplyBook", "Setmore"]
+      compose_description: |
+        Open-source customer booking app. One or many providers, public booking page, ICS sync. Replaces Calendly / Acuity.
+
+        https://catena.run/docs/apps/easyappointments/
+      setup_steps: |
+        1. Click **Deploy**. Wait ~1 min for the first boot (database initializes on first run).
+        2. Visit your Easy!Appointments domain and complete the first-run installer (creates the initial admin account, business name, working hours).
+        3. Add providers (staff with bookable calendars), services (durations + prices), and customers as needed.
+        4. *(Optional)* Configure SMTP under **Settings** -> **Business Logic** -> **Email** to send appointment confirmations and reminders. Without SMTP, customers and staff still see bookings inside the app, but no emails go out.
+        5. *(Optional)* Embed the booking page on your website: copy the public booking URL from **Settings** -> **Booking Settings** and link to it from your site or business listings.
+      extra_notes: |
+        ### Authentication
+
+        Easy!Appointments v1.5.2 uses local email/password sign-in for staff. No native OIDC in the upstream release. The customer-facing booking page is public by design -- visitors book a slot without creating an account, only providing name, email, and phone. The SSO gap therefore only affects staff sign-in and is typically manageable for the small teams (1-10 staff) the app targets.
+
+        If a single sign-on for staff is required, contact your operator to discuss an oauth2-proxy front layer; default deployment ships with local accounts.
+
+        ### Email + SMS reminders
+
+        Email reminders work as soon as SMTP is configured. SMS reminders require a Twilio account (configured under **Settings** -> **Notifications** -> **SMS**). SMS is opt-in per customer at booking time.
+
+        ### Public booking URL
+
+        The default public URL is `https://book.<your-domain>/`. Share this directly with customers, embed it as a button on your business website, or list it on Google Business Profile.
+    fr:
+      display_name: Easy!Appointments
+      what_it_is: Application de réservation côté client pour un ou plusieurs prestataires (clinique, salon, cours, atelier de réparation). Page de réservation publique ; calendriers du personnel ; rappels courriel + SMS ; export ICS.
+      replaces: ["Calendly", "Acuity", "SimplyBook", "Setmore"]
+      compose_description: |
+        Application de réservation client open-source. Un ou plusieurs prestataires, page publique, synchronisation ICS. Remplace Calendly / Acuity.
+
+        https://catena.run/docs/apps/easyappointments/
+      setup_steps: |
+        1. Cliquez **Deploy**. Patientez ~1 min pour le premier démarrage (la base de données s'initialise au premier lancement).
+        2. Visitez votre domaine Easy!Appointments et complétez l'assistant initial (compte admin, nom de l'entreprise, heures d'ouverture).
+        3. Ajoutez les prestataires (membres du personnel avec calendriers réservables), les services (durées + prix), et les clients au besoin.
+        4. *(Optionnel)* Configurez SMTP sous **Settings** -> **Business Logic** -> **Email** pour envoyer les confirmations et rappels de rendez-vous. Sans SMTP, les clients et le personnel voient les réservations dans l'application, mais aucun courriel n'est envoyé.
+        5. *(Optionnel)* Intégrez la page de réservation à votre site web : copiez l'URL publique depuis **Settings** -> **Booking Settings** et liez-la depuis votre site ou vos fiches d'établissement.
+      extra_notes: |
+        ### Authentification
+
+        Easy!Appointments v1.5.2 utilise une connexion locale par courriel/mot de passe pour le personnel. Pas d'OIDC natif dans la version upstream. La page de réservation côté client est publique par conception -- les visiteurs réservent un créneau sans compte, en fournissant seulement leur nom, courriel et téléphone. L'absence de SSO ne touche donc que la connexion du personnel et reste gérable pour les petites équipes (1 à 10 personnes) ciblées par l'application.
+
+        Si un SSO unifié pour le personnel est requis, contactez votre opérateur pour discuter d'un proxy oauth2 en façade ; le déploiement par défaut utilise des comptes locaux.
+
+        ### Rappels courriel + SMS
+
+        Les rappels par courriel fonctionnent dès que SMTP est configuré. Les rappels SMS nécessitent un compte Twilio (configuré sous **Settings** -> **Notifications** -> **SMS**). Les SMS sont consentis par le client au moment de la réservation.
+
+        ### URL de réservation publique
+
+        L'URL publique par défaut est `https://book.<votre-domaine>/`. Partagez-la directement avec vos clients, intégrez-la comme bouton sur votre site web, ou listez-la sur votre fiche Google Business.
+
+  - id: mautic
+    app_name: mautic
+    upstream_url: https://www.mautic.org/
+    sso_mode: none
+    domain_host: "marketing.{{ cloudflare_zone }}"
+    domain_service: mautic_web
+    domain_port: 80
+    compose_file: "{{ playbook_dir }}/../../../internal_docs/operator/client-app-templates/mautic.compose.yml"
+    env_defaults:
+      - "MAUTIC_HOSTNAME=marketing.{{ cloudflare_zone }}"
+      - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      - "DB_ROOT_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      # SMTP is consumed via the post-deploy admin UI (Settings ->
+      # Configuration -> Email Settings). Exposed here so the operator
+      # can paste managed-relay creds without editing compose.
+      - "SMTP_HOST="
+      - "SMTP_PORT=587"
+      - "SMTP_USERNAME="
+      - "SMTP_PASSWORD="
+      - "SMTP_FROM_ADDRESS="
+    en:
+      display_name: Mautic
+      what_it_is: Open-source marketing automation. Contact segments, email campaigns, drip sequences, landing pages, forms, lead scoring. Replaces Mailchimp /
+        ActiveCampaign / HubSpot Marketing.
+      replaces: ["Mailchimp", "ActiveCampaign", "HubSpot Marketing", "Brevo (Sendinblue)"]
+      compose_description: |
+        Open-source marketing automation. Drip campaigns, segments, landing pages. Replaces Mailchimp / ActiveCampaign.
+
+        https://catena.run/docs/apps/mautic/
+      setup_steps: |
+        1. Click **Deploy**. Wait ~2 min for the first boot (database migrations run on first start).
+        2. Visit your Mautic domain and complete the first-run wizard:
+           - **Database**: pre-filled (host `db`, name `mautic`, user `mautic`, password from the `DB_PASSWORD` env var).
+           - **Admin user**: create your initial admin account.
+           - **Email settings**: paste your managed-relay SMTP creds (host, port `587`, username, password, from-address). Skip if you'll do this later under **Settings** -> **Configuration** -> **Email Settings**.
+        3. Verify the cron + worker containers are running in Dokploy (Mautic needs `mautic_cron` for scheduled campaigns + `mautic_worker` for the email queue).
+        4. Build your first segment: **Segments** -> **New** -> filter by contact attribute.
+        5. Build your first email campaign: **Campaigns** -> **New** -> drag the **Send email** action onto a segment trigger.
+      extra_notes: |
+        ### Authentication
+
+        Mautic community edition does not ship native OIDC. Local username/password is the default. SAML2 is supported upstream but requires per-deploy config; third-party generic-OAuth2 plugins exist. If single sign-on across the stack is required, contact your operator to add an oauth2-proxy front layer (Keycloak group `client-staff` gates access at the Traefik edge before traffic reaches Mautic).
+
+        ### SMTP and sending reputation
+
+        Mautic does NOT send email directly. It hands every outbound to your managed SMTP relay (see the [email providers guide](/docs/en/guides/email-providers/) for recommended choices). Sending reputation, SPF/DKIM/DMARC, and bounce handling all live at the relay layer. Configure SMTP under **Settings** -> **Configuration** -> **Email Settings** with your relay's credentials before the first campaign goes out.
+
+        ### Lead-magnet content and drip-campaign copy
+
+        The template ships the engine. Authoring the lead-magnet PDFs, drip-sequence copy, and email templates is your team's job (or your operator's, if they offer marketing-content services). Mautic itself does not ship pre-built campaigns.
+
+        ### Resource note
+
+        Mautic runs as Apache + MariaDB + a worker sidecar + a cron sidecar. Plan for ~1.5 GB RAM at idle (worker + cron eat ~300 MB each), ~3 GB under campaign sends or segment rebuilds. Storage grows with media uploads and email-event history; budget ~10 GB after the first year of regular use.
+    fr:
+      display_name: Mautic
+      what_it_is: Automatisation marketing open-source. Segments de contacts, campagnes courriel, séquences drip, pages de destination, formulaires, scoring de
+        prospects. Remplace Mailchimp / ActiveCampaign / HubSpot Marketing.
+      replaces: ["Mailchimp", "ActiveCampaign", "HubSpot Marketing", "Brevo (Sendinblue)"]
+      compose_description: |
+        Automatisation marketing open-source. Séquences drip, segments, pages de destination. Remplace Mailchimp / ActiveCampaign.
+
+        https://catena.run/docs/apps/mautic/
+      setup_steps: |
+        1. Cliquez **Deploy**. Patientez ~2 min pour le premier démarrage (les migrations de base s'exécutent au premier lancement).
+        2. Visitez votre domaine Mautic et complétez l'assistant initial :
+           - **Base de données** : pré-remplie (hôte `db`, nom `mautic`, utilisateur `mautic`, mot de passe depuis la variable `DB_PASSWORD`).
+           - **Utilisateur admin** : créez votre compte admin initial.
+           - **Paramètres courriel** : collez les identifiants SMTP de votre relais géré (hôte, port `587`, nom d'utilisateur, mot de passe, adresse expéditeur). Sautez cette étape si vous préférez la configurer plus tard sous **Settings** -> **Configuration** -> **Email Settings**.
+        3. Vérifiez que les conteneurs cron + worker tournent dans Dokploy (Mautic a besoin de `mautic_cron` pour les campagnes planifiées + `mautic_worker` pour la file d'envoi).
+        4. Créez votre premier segment : **Segments** -> **New** -> filtrez par attribut de contact.
+        5. Créez votre première campagne : **Campaigns** -> **New** -> glissez l'action **Send email** sur un déclencheur de segment.
+      extra_notes: |
+        ### Authentification
+
+        Mautic édition communautaire ne fournit pas d'OIDC natif. Connexion locale par nom d'utilisateur/mot de passe par défaut. SAML2 est supporté en amont mais demande une configuration par déploiement ; des plugins OAuth2 génériques tiers existent. Si un SSO unifié pour la stack est requis, contactez votre opérateur pour ajouter une couche oauth2-proxy en façade (le groupe Keycloak `client-staff` filtre l'accès au niveau Traefik avant que le trafic n'atteigne Mautic).
+
+        ### SMTP et réputation d'envoi
+
+        Mautic n'envoie PAS directement les courriels. Il remet chaque envoi à votre relais SMTP géré (voir le [guide des fournisseurs courriel](/docs/guides/email-providers/) pour les choix recommandés). Réputation d'envoi, SPF/DKIM/DMARC, et gestion des rebonds vivent au niveau du relais. Configurez SMTP sous **Settings** -> **Configuration** -> **Email Settings** avec les identifiants de votre relais avant la première campagne.
+
+        ### Contenu d'aimant à prospects et copie des séquences drip
+
+        Le template fournit le moteur. La rédaction des PDF d'aimants, des séquences drip et des modèles d'envoi est le travail de votre équipe (ou de votre opérateur, s'il offre des services de contenu marketing). Mautic lui-même ne livre aucune campagne pré-bâtie.
+
+        ### Ressources
+
+        Mautic tourne en Apache + MariaDB + un worker sidecar + un cron sidecar. Prévoyez ~1.5 GB RAM au repos (worker + cron consomment ~300 MB chacun), ~3 GB sous envois de campagne ou reconstruction de segments. Le stockage croît avec les uploads de médias et l'historique des événements courriel ; budgétez ~10 GB après la première année d'usage régulier.

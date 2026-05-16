@@ -1,0 +1,75 @@
+# Postiz -- social media scheduling / posting across networks (Twitter/X,
+# LinkedIn, Facebook, Instagram, YouTube, TikTok, ...). Login is local
+# (email/password) + optional social OAuth buttons configured per-
+# network. No native OIDC in the current community release.
+
+services:
+  postiz:
+    image: ghcr.io/gitroomhq/postiz-app:v2.21.7
+    restart: unless-stopped
+    environment:
+      NOT_SECURED: "false"
+      IS_GENERAL: "true"
+      STORAGE_PROVIDER: local
+      UPLOAD_DIRECTORY: /uploads
+      NEXT_PUBLIC_UPLOAD_DIRECTORY: /uploads
+      MAIN_URL: https://${POSTIZ_HOSTNAME}
+      FRONTEND_URL: https://${POSTIZ_HOSTNAME}
+      NEXT_PUBLIC_BACKEND_URL: https://${POSTIZ_HOSTNAME}/api
+      BACKEND_INTERNAL_URL: http://localhost:3000
+      DATABASE_URL: postgres://postiz:${DB_PASSWORD}@db:5432/postiz
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      DISABLE_REGISTRATION: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - postiz-uploads:/uploads
+      - postiz-config:/config
+    labels:
+      - "vps.auth.mode=public"
+      - "vps.auto-update=patch"
+    networks:
+      dokploy-network:
+        aliases:
+          - postiz
+      default: {}
+
+  db:
+    image: postgres:16.13-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postiz
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: postiz
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postiz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "vps.auto-update=patch"
+    networks:
+      - default
+
+  redis:
+    image: redis:8.6.3-alpine3.23
+    restart: unless-stopped
+    labels:
+      - "vps.auto-update=patch"
+    networks:
+      - default
+
+volumes:
+  postiz-uploads:
+  postiz-config:
+  db-data:
+
+networks:
+  dokploy-network:
+    external: true

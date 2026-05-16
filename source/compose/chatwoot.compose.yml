@@ -1,0 +1,99 @@
+# Chatwoot -- customer support / omnichannel inbox (email, live chat,
+# WhatsApp, Facebook, Instagram, Twitter, ...). Community edition uses
+# email/password for agent login; SAML/OIDC SSO is enterprise-only.
+
+services:
+  rails:
+    image: chatwoot/chatwoot:v4.13.0-ce
+    restart: unless-stopped
+    entrypoint: docker/entrypoints/rails.sh
+    command: ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
+    environment:
+      RAILS_ENV: production
+      NODE_ENV: production
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      FRONTEND_URL: https://${CHATWOOT_HOSTNAME}
+      DEFAULT_LOCALE: en
+      FORCE_SSL: "true"
+      INSTALLATION_NAME: "Chatwoot"
+      POSTGRES_HOST: db
+      POSTGRES_DATABASE: chatwoot
+      POSTGRES_USERNAME: chatwoot
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      REDIS_URL: redis://redis:6379
+      RAILS_LOG_TO_STDOUT: "true"
+      ACTIVE_STORAGE_SERVICE: local
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - storage-data:/app/storage
+    labels:
+      - "vps.auth.mode=public"
+      - "vps.auto-update=patch"
+    networks:
+      dokploy-network:
+        aliases:
+          - chatwoot
+      default: {}
+
+  sidekiq:
+    image: chatwoot/chatwoot:v4.13.0-ce
+    restart: unless-stopped
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+    environment:
+      RAILS_ENV: production
+      NODE_ENV: production
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      FRONTEND_URL: https://${CHATWOOT_HOSTNAME}
+      POSTGRES_HOST: db
+      POSTGRES_DATABASE: chatwoot
+      POSTGRES_USERNAME: chatwoot
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      REDIS_URL: redis://redis:6379
+      ACTIVE_STORAGE_SERVICE: local
+    depends_on:
+      - rails
+    volumes:
+      - storage-data:/app/storage
+    labels:
+      - "vps.auto-update=patch"
+    networks:
+      - default
+
+  db:
+    image: postgres:16.13-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: chatwoot
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: chatwoot
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatwoot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "vps.auto-update=patch"
+    networks:
+      - default
+
+  redis:
+    image: redis:8.6.3-alpine3.23
+    restart: unless-stopped
+    labels:
+      - "vps.auto-update=patch"
+    networks:
+      - default
+
+volumes:
+  storage-data:
+  db-data:
+
+networks:
+  dokploy-network:
+    external: true
