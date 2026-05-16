@@ -1,0 +1,98 @@
+# Twenty -- modern open-source CRM. Email/password login out of the box;
+# to enable Keycloak SSO, go to Settings -> Security -> Single sign-on
+# (OIDC) after first deploy and paste the OIDC_* values from
+# the Environment tab. Workspace-level config -- not env-driven in the
+# community edition.
+
+services:
+  server:
+    image: twentycrm/twenty:v2.3.2
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PG_DATABASE_URL: postgres://postgres:${DB_PASSWORD}@db:5432/default
+      REDIS_URL: redis://redis:6379
+      SERVER_URL: https://${TWENTY_HOSTNAME}
+      STORAGE_TYPE: local
+      STORAGE_LOCAL_PATH: /app/.local-storage
+      APP_SECRET: ${TWENTY_APP_SECRET}
+      # Exposed for operator reference (Settings -> SSO) but not read by
+      # the server directly.
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL}
+    volumes:
+      - server-data:/app/.local-storage
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    labels:
+      - "vps.auth.mode=public"
+      - "vps.auth.oidc=true"
+      - "vps.auth.groups=client-staff"
+      - "vps.auth.oidc.redirect_uris=https://${TWENTY_HOSTNAME}/auth/oidc/callback"
+      - "vps.auth.oidc.scopes=openid email profile"
+      - "vps.auto-update=patch"
+    networks:
+      dokploy-network:
+        aliases:
+          - twenty
+      default: {}
+
+  worker:
+    image: twentycrm/twenty:v2.3.2
+    restart: unless-stopped
+    command: ["yarn", "worker:prod"]
+    environment:
+      NODE_ENV: production
+      PG_DATABASE_URL: postgres://postgres:${DB_PASSWORD}@db:5432/default
+      REDIS_URL: redis://redis:6379
+      SERVER_URL: https://${TWENTY_HOSTNAME}
+      STORAGE_TYPE: local
+      STORAGE_LOCAL_PATH: /app/.local-storage
+      APP_SECRET: ${TWENTY_APP_SECRET}
+    volumes:
+      - server-data:/app/.local-storage
+    depends_on:
+      - server
+    labels:
+      - "vps.auto-update=patch"
+    networks:
+      - default
+
+  db:
+    image: postgres:16.13-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: default
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "vps.auto-update=patch"
+    networks:
+      - default
+
+  redis:
+    image: redis:8.6.3-alpine3.23
+    restart: unless-stopped
+    labels:
+      - "vps.auto-update=patch"
+    networks:
+      - default
+
+volumes:
+  server-data:
+  db-data:
+
+networks:
+  dokploy-network:
+    external: true

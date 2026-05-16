@@ -1,0 +1,42 @@
+# Collabora CODE -- collaborative editing for ODT/DOCX/XLSX/PPTX,
+# bolted into Nextcloud via the "Nextcloud Office" app (richdocuments).
+# Lighter alternative to OnlyOffice; better fidelity for ODF formats,
+# acceptable fidelity for MS Office formats.
+#
+# Server-to-server auth uses Collabora's WOPI host allow-list (the
+# `domain` env), not a JWT. Any WOPI host whose FQDN matches the regex
+# below is allowed; we restrict to `nextcloud.*` because each catena
+# VPS has at most one Nextcloud and that label is reserved.
+#
+# The UI is iframe-embedded inside Nextcloud; forward-auth MUST be
+# disabled on this route (vps.auth.mode=public) because the iframe
+# would otherwise redirect to Keycloak and break the editor. Browser
+# users never visit this domain directly -- they only see it through
+# Nextcloud when they open a document.
+
+services:
+  collabora:
+    image: collabora/code:25.04.9.4.1
+    restart: unless-stopped
+    environment:
+      # Regex of WOPI hosts allowed to use this CODE instance. The
+      # `nextcloud\..*` pattern matches any `nextcloud.<zone>` FQDN;
+      # one Nextcloud per VPS makes this precise enough.
+      domain: 'nextcloud\..*'
+      # Traefik (Cloudflare Tunnel upstream) terminates TLS; coolwsd
+      # speaks plain HTTP on 9980 inside the dokploy-network. The
+      # ssl.termination flag tells coolwsd to emit https:// URLs in
+      # its discovery XML even though it itself is listening on http.
+      extra_params: --o:ssl.enable=false --o:ssl.termination=true
+    labels:
+      - "vps.auth.mode=public"
+      - "vps.auto-update=patch"
+    networks:
+      dokploy-network:
+        aliases:
+          - collabora
+      default: {}
+
+networks:
+  dokploy-network:
+    external: true
