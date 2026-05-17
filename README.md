@@ -42,13 +42,13 @@ In any Dokploy instance, paste the raw URL of this repo's main branch
 into the BASE URL field of the Templates panel:
 
 ```
-https://raw.githubusercontent.com/catenahq/templates/main/
+https://raw.githubusercontent.com/catenahq/dokploy-templates/main/
 ```
 
 Pin a release tag to freeze the catalog:
 
 ```
-https://raw.githubusercontent.com/catenahq/templates/tags/v0.1.0/
+https://raw.githubusercontent.com/catenahq/dokploy-templates/tags/v0.1.0/
 ```
 
 Operator setup doc: catenahq/docs `operator/dokploy-marketplace-setup`.
@@ -91,7 +91,7 @@ Patch: env-default change, prose tweak. Minor: new template, new
 env_managed_key. Major: catalog schema change (breaks the ops/ loader).
 
 Tag a release: `git tag -a vX.Y.Z -m "..." && git push --tags`.
-catenahq/ops's `Bump @catenahq/templates to latest` workflow opens
+catenahq/ops's `Bump @catenahq/dokploy-templates to latest` workflow opens
 a vendored-tarball-bump PR on its next daily run.
 
 ## What does NOT live here
