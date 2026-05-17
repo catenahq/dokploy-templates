@@ -48,6 +48,7 @@ CI verifies via `git diff --exit-code blueprints meta.json`.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -155,7 +156,54 @@ def render_template_toml(entry: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def render_meta_entry(entry: dict[str, Any]) -> dict[str, Any]:
+# Tailwind-ish palette for deterministic placeholder logos. Indexed by
+# hash(slug) % len. Each entry: (background, foreground). Picked to be
+# legible on Dokploy's light + dark catalog backgrounds.
+_LOGO_PALETTE: tuple[tuple[str, str], ...] = (
+    ("#0f766e", "#ffffff"),  # teal
+    ("#1d4ed8", "#ffffff"),  # blue
+    ("#7c3aed", "#ffffff"),  # violet
+    ("#be123c", "#ffffff"),  # rose
+    ("#c2410c", "#ffffff"),  # orange
+    ("#65a30d", "#ffffff"),  # lime
+    ("#0284c7", "#ffffff"),  # sky
+    ("#a16207", "#ffffff"),  # amber
+)
+
+
+def placeholder_logo_svg(slug: str, label: str) -> str:
+    digest = hashlib.sha256(slug.encode("utf-8")).digest()
+    bg, fg = _LOGO_PALETTE[digest[0] % len(_LOGO_PALETTE)]
+    glyph = (label or slug or "?")[0].upper()
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">'
+        f'<rect width="256" height="256" rx="32" fill="{bg}"/>'
+        f'<text x="128" y="128" text-anchor="middle" dominant-baseline="central" '
+        f'font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif" '
+        f'font-size="148" font-weight="600" fill="{fg}">{glyph}</text>'
+        '</svg>\n'
+    )
+
+
+def resolve_logo(entry: dict[str, Any], out_dir: Path) -> str:
+    """Place the logo file for `entry` under `out_dir`. Returns the
+    filename to record in meta.json's `logo` field.
+
+    Source precedence: `source/assets/<id>/logo.png` -> copied as-is;
+    `.svg` -> copied as-is; nothing -> deterministic placeholder SVG."""
+    slug = entry["id"]
+    asset_dir = SOURCE / "assets" / slug
+    for name in ("logo.png", "logo.svg"):
+        src = asset_dir / name
+        if src.exists():
+            shutil.copyfile(src, out_dir / name)
+            return name
+    label = (entry.get("en") or {}).get("display_name") or entry.get("app_name") or slug
+    (out_dir / "logo.svg").write_text(placeholder_logo_svg(slug, label))
+    return "logo.svg"
+
+
+def render_meta_entry(entry: dict[str, Any], logo_filename: str) -> dict[str, Any]:
     slug = entry["id"]
     en = entry.get("en", {}) or {}
     description = (en.get("compose_description", "") or "").strip().split("\n")[0]
@@ -169,7 +217,7 @@ def render_meta_entry(entry: dict[str, Any]) -> dict[str, Any]:
             "website": entry.get("upstream_url", ""),
             "docs": f"https://catena.run/docs/apps/{slug}/",
         },
-        "logo": "logo.png",
+        "logo": logo_filename,
         "tags": [entry.get("sso_mode", "")] if entry.get("sso_mode") else [],
     }
 
@@ -202,11 +250,8 @@ def render_all() -> int:
 
         (out_dir / "template.toml").write_text(render_template_toml(entry))
 
-        logo = SOURCE / "assets" / slug / "logo.png"
-        if logo.exists():
-            shutil.copyfile(logo, out_dir / "logo.png")
-
-        meta.append(render_meta_entry(entry))
+        logo_filename = resolve_logo(entry, out_dir)
+        meta.append(render_meta_entry(entry, logo_filename))
 
     META_JSON.write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n")
 

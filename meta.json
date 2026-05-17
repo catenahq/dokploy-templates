@@ -7,7 +7,7 @@
       "github": "https://nextcloud.com",
       "website": "https://nextcloud.com"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "Nextcloud",
     "tags": [
       "auto"
@@ -22,7 +22,7 @@
       "github": "https://www.collaboraonline.com/",
       "website": "https://www.collaboraonline.com/"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "Collabora Online (CODE)",
     "tags": [
       "n/a"
@@ -37,7 +37,7 @@
       "github": "https://www.onlyoffice.com/",
       "website": "https://www.onlyoffice.com/"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "OnlyOffice",
     "tags": [
       "n/a"
@@ -52,7 +52,7 @@
       "github": "https://www.rocket.chat/",
       "website": "https://www.rocket.chat/"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "Rocket.Chat",
     "tags": [
       "pre-wired"
@@ -67,7 +67,7 @@
       "github": "https://www.docuseal.com/",
       "website": "https://www.docuseal.com/"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "DocuSeal",
     "tags": [
       "post-deploy-ui"
@@ -82,7 +82,7 @@
       "github": "https://documenso.com/",
       "website": "https://documenso.com/"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "Documenso (deprecated)",
     "tags": [
       "pre-wired"
@@ -97,7 +97,7 @@
       "github": "https://www.getoutline.com/",
       "website": "https://www.getoutline.com/"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "Outline",
     "tags": [
       "pre-wired"
@@ -112,7 +112,7 @@
       "github": "https://www.espocrm.com/",
       "website": "https://www.espocrm.com/"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "EspoCRM",
     "tags": [
       "post-deploy-ui"
@@ -127,7 +127,7 @@
       "github": "https://twenty.com/",
       "website": "https://twenty.com/"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "Twenty",
     "tags": [
       "post-deploy-ui"
@@ -142,7 +142,7 @@
       "github": "https://plane.so/",
       "website": "https://plane.so/"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "Plane",
     "tags": [
       "post-deploy-ui"
@@ -157,7 +157,7 @@
       "github": "https://github.com/calcom/cal.diy",
       "website": "https://github.com/calcom/cal.diy"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "cal.diy",
     "tags": [
       "none"
@@ -172,7 +172,7 @@
       "github": "https://zammad.com/",
       "website": "https://zammad.com/"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "Zammad",
     "tags": [
       "post-deploy-ui"
@@ -187,7 +187,7 @@
       "github": "https://www.chatwoot.com/",
       "website": "https://www.chatwoot.com/"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "Chatwoot",
     "tags": [
       "none"
@@ -202,7 +202,7 @@
       "github": "https://wordpress.org/",
       "website": "https://wordpress.org/"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "WordPress",
     "tags": [
       "post-deploy-ui"
@@ -217,7 +217,7 @@
       "github": "https://n8n.io/",
       "website": "https://n8n.io/"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "n8n",
     "tags": [
       "none"
@@ -232,7 +232,7 @@
       "github": "https://erpnext.com/",
       "website": "https://erpnext.com/"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "ERPNext",
     "tags": [
       "post-deploy-ui"
@@ -247,7 +247,7 @@
       "github": "https://actualbudget.org/",
       "website": "https://actualbudget.org/"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "Actual Budget",
     "tags": [
       "none"
@@ -262,7 +262,7 @@
       "github": "https://postiz.com/",
       "website": "https://postiz.com/"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "Postiz",
     "tags": [
       "none"
@@ -277,7 +277,7 @@
       "github": "https://easyappointments.org/",
       "website": "https://easyappointments.org/"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "Easy!Appointments",
     "tags": [
       "none"
@@ -292,7 +292,7 @@
       "github": "https://www.mautic.org/",
       "website": "https://www.mautic.org/"
     },
-    "logo": "logo.png",
+    "logo": "logo.svg",
     "name": "Mautic",
     "tags": [
       "none"
