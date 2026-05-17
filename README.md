@@ -1,4 +1,4 @@
-# catenahq/templates
+# catenahq/dokploy-templates
 
 Single source of truth for the Catena Dokploy template catalog: the
 compose files + per-template metadata + build pipeline that emits
