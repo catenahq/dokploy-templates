@@ -135,21 +135,6 @@
     "version": "latest"
   },
   {
-    "description": "Open-source single-provider booking page with paid bookings + calendar app store. Replaces Calendly / Acuity.",
-    "id": "cal-diy",
-    "links": {
-      "docs": "https://catena.run/docs/apps/cal-diy/",
-      "github": "https://github.com/calcom/cal.diy",
-      "website": "https://github.com/calcom/cal.diy"
-    },
-    "logo": "logo.svg",
-    "name": "cal.diy",
-    "tags": [
-      "none"
-    ],
-    "version": "latest"
-  },
-  {
     "description": "Ticket-first help desk. Replaces Zendesk / Freshdesk.",
     "id": "zammad",
     "links": {
