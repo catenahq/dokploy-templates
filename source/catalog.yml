@@ -61,6 +61,34 @@
 #                        Default: report-only (no DB mutations). Add
 #                        a `delete_orphans: true` flag (off by default)
 #                        to opt into destructive cleanup.
+#     bench_pack (optional, default "nodb" inference) -- which
+#                        BENCH_DEPLOY_PACK groups this template for the
+#                        catena-ops test bench. Enum:
+#                            postgres | mariadb | mongo | nodb | embedded
+#                        Operators run the bench against one pack at a
+#                        time (BENCH_DEPLOY_PACK=postgres) or against
+#                        every template at once (BENCH_DEPLOY_PACK=all).
+#                        Set this field explicitly per entry rather than
+#                        relying on inference -- it makes pack membership
+#                        reviewable in the catalog diff. "embedded" is
+#                        for apps that ship their own DB inside the
+#                        application container (onlyoffice bundles
+#                        postgres/redis/rabbitmq; actualbudget uses
+#                        sqlite); they have no externally-reachable DB
+#                        service the bench can inject a row into, so
+#                        the bench treats them like "nodb" for DB
+#                        canaries but still runs the volume canary.
+#     bench_fixture (optional, default "required") -- whether the
+#                        catena-ops test bench requires a matching
+#                        fixtures/<id>.yml file. Enum:
+#                            required | skip
+#                        "required" is the default; CI fails if the
+#                        fixture file is missing. "skip" is for the
+#                        rare template that has no persisted state worth
+#                        round-tripping (e.g. collabora is a stateless
+#                        document editor with no per-user data). The
+#                        catalog entry MUST justify skip in a comment
+#                        immediately above the field.
 #   Per-language (en, fr) fields:
 #     display_name        -- human-readable app name
 #     what_it_is          -- one-line pitch
@@ -73,6 +101,7 @@
 dokploy_template_catalog:
   - id: nextcloud-s3-oidc
     app_name: nextcloud
+    bench_pack: postgres
     upstream_url: https://nextcloud.com
     sso_mode: auto
     domain_host: "nextcloud.{{ cloudflare_zone }}"
@@ -318,6 +347,12 @@ dokploy_template_catalog:
 
   - id: collabora
     app_name: collabora
+    bench_pack: nodb
+    # bench_fixture: stateless document editor. No per-user data,
+    # no DB, no volumes worth round-tripping through restic. The
+    # restore-drill canary contract has nothing to verify on this
+    # template, so the bench skips it entirely.
+    bench_fixture: skip
     upstream_url: https://www.collaboraonline.com/
     sso_mode: n/a
     domain_host: "office.{{ cloudflare_zone }}"
@@ -364,6 +399,7 @@ dokploy_template_catalog:
 
   - id: onlyoffice
     app_name: onlyoffice
+    bench_pack: embedded
     upstream_url: https://www.onlyoffice.com/
     sso_mode: n/a
     domain_host: "office.{{ cloudflare_zone }}"
@@ -409,6 +445,7 @@ dokploy_template_catalog:
 
   - id: rocketchat-oidc
     app_name: rocketchat
+    bench_pack: mongo
     upstream_url: https://www.rocket.chat/
     sso_mode: pre-wired
     domain_host: "chat.{{ cloudflare_zone }}"
@@ -486,6 +523,7 @@ dokploy_template_catalog:
 
   - id: docuseal
     app_name: docuseal
+    bench_pack: postgres
     upstream_url: https://www.docuseal.com/
     sso_mode: post-deploy-ui
     domain_host: "sign.{{ cloudflare_zone }}"
@@ -571,6 +609,7 @@ dokploy_template_catalog:
 
   - id: outline
     app_name: outline
+    bench_pack: postgres
     upstream_url: https://www.getoutline.com/
     sso_mode: pre-wired
     domain_host: "wiki.{{ cloudflare_zone }}"
@@ -611,6 +650,7 @@ dokploy_template_catalog:
 
   - id: espocrm
     app_name: espocrm
+    bench_pack: mariadb
     upstream_url: https://www.espocrm.com/
     sso_mode: post-deploy-ui
     domain_host: "crm.{{ cloudflare_zone }}"
@@ -689,6 +729,7 @@ dokploy_template_catalog:
 
   - id: twenty
     app_name: twenty
+    bench_pack: postgres
     upstream_url: https://twenty.com/
     sso_mode: post-deploy-ui
     domain_host: "twenty.{{ cloudflare_zone }}"
@@ -730,6 +771,7 @@ dokploy_template_catalog:
 
   - id: plane
     app_name: plane
+    bench_pack: postgres
     upstream_url: https://plane.so/
     sso_mode: post-deploy-ui
     domain_host: "projects.{{ cloudflare_zone }}"
@@ -771,6 +813,7 @@ dokploy_template_catalog:
 
   - id: zammad
     app_name: zammad
+    bench_pack: postgres
     upstream_url: https://zammad.com/
     sso_mode: post-deploy-ui
     domain_host: "help.{{ cloudflare_zone }}"
@@ -811,6 +854,7 @@ dokploy_template_catalog:
 
   - id: chatwoot
     app_name: chatwoot
+    bench_pack: postgres
     upstream_url: https://www.chatwoot.com/
     sso_mode: none
     domain_host: "support.{{ cloudflare_zone }}"
@@ -852,6 +896,7 @@ dokploy_template_catalog:
 
   - id: wordpress
     app_name: wordpress
+    bench_pack: mariadb
     upstream_url: https://wordpress.org/
     sso_mode: post-deploy-ui
     domain_host: "www.{{ cloudflare_zone }}"
@@ -925,6 +970,7 @@ dokploy_template_catalog:
 
   - id: n8n
     app_name: n8n
+    bench_pack: postgres
     upstream_url: https://n8n.io/
     sso_mode: none
     domain_host: "automate.{{ cloudflare_zone }}"
@@ -971,6 +1017,7 @@ dokploy_template_catalog:
 
   - id: erpnext
     app_name: erpnext
+    bench_pack: mariadb
     upstream_url: https://erpnext.com/
     sso_mode: post-deploy-ui
     domain_host: "erp.{{ cloudflare_zone }}"
@@ -1026,6 +1073,7 @@ dokploy_template_catalog:
 
   - id: actualbudget
     app_name: actualbudget
+    bench_pack: embedded
     upstream_url: https://actualbudget.org/
     sso_mode: none
     domain_host: "budget.{{ cloudflare_zone }}"
@@ -1066,6 +1114,7 @@ dokploy_template_catalog:
 
   - id: postiz
     app_name: postiz
+    bench_pack: postgres
     upstream_url: https://postiz.com/
     sso_mode: none
     domain_host: "social.{{ cloudflare_zone }}"
@@ -1107,6 +1156,7 @@ dokploy_template_catalog:
 
   - id: easyappointments
     app_name: easyappointments
+    bench_pack: mariadb
     upstream_url: https://easyappointments.org/
     sso_mode: none
     domain_host: "book.{{ cloudflare_zone }}"
@@ -1176,6 +1226,7 @@ dokploy_template_catalog:
 
   - id: mautic
     app_name: mautic
+    bench_pack: mariadb
     upstream_url: https://www.mautic.org/
     sso_mode: none
     domain_host: "marketing.{{ cloudflare_zone }}"

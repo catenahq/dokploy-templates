@@ -63,6 +63,14 @@ SOURCE = ROOT / "source"
 BLUEPRINTS = ROOT / "blueprints"
 META_JSON = ROOT / "meta.json"
 
+# Allowed enum values for the operator-facing bench_pack + bench_fixture
+# fields. The catena-ops test bench reads these from the catalog at
+# load time to partition templates into restore-drill groups
+# (BENCH_DEPLOY_PACK=postgres etc.) and to enforce that every template
+# either ships a fixture file or explicitly opts out.
+BENCH_PACK_VALUES = frozenset({"postgres", "mariadb", "mongo", "nodb", "embedded"})
+BENCH_FIXTURE_VALUES = frozenset({"required", "skip"})
+
 # Sentinel placeholder for env vars that catenahq/ops re-injects on every
 # converge (env_managed_keys). Operator never sees these in the Dokploy
 # UI; ops/ overwrites them post-deploy.
@@ -222,6 +230,37 @@ def render_meta_entry(entry: dict[str, Any], logo_filename: str) -> dict[str, An
     }
 
 
+def validate_bench_fields(entries: list[dict[str, Any]]) -> list[str]:
+    """Validate every catalog entry's bench_pack + bench_fixture fields.
+
+    Returns a list of human-readable error strings; empty list means
+    the catalog is valid. bench_pack is required (operator must declare
+    pack membership explicitly so the diff is reviewable); bench_fixture
+    is optional and defaults to "required".
+    """
+    errors: list[str] = []
+    for entry in entries:
+        slug = entry.get("id", "<unknown>")
+        pack = entry.get("bench_pack")
+        if pack is None:
+            errors.append(
+                f"{slug}: missing required field bench_pack "
+                f"(one of {sorted(BENCH_PACK_VALUES)})"
+            )
+        elif pack not in BENCH_PACK_VALUES:
+            errors.append(
+                f"{slug}: bench_pack={pack!r} not in "
+                f"{sorted(BENCH_PACK_VALUES)}"
+            )
+        fixture = entry.get("bench_fixture", "required")
+        if fixture not in BENCH_FIXTURE_VALUES:
+            errors.append(
+                f"{slug}: bench_fixture={fixture!r} not in "
+                f"{sorted(BENCH_FIXTURE_VALUES)}"
+            )
+    return errors
+
+
 def render_all() -> int:
     if not SOURCE.exists():
         print(f"error: missing {SOURCE}", file=sys.stderr)
@@ -230,6 +269,13 @@ def render_all() -> int:
     catalog_path = SOURCE / "catalog.yml"
     catalog = yaml.safe_load(catalog_path.read_text())
     entries = catalog["dokploy_template_catalog"]
+
+    field_errors = validate_bench_fields(entries)
+    if field_errors:
+        print("catalog validation failed:", file=sys.stderr)
+        for err in field_errors:
+            print(f"  {err}", file=sys.stderr)
+        return 1
 
     if BLUEPRINTS.exists():
         shutil.rmtree(BLUEPRINTS)
