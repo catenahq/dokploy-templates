@@ -75,21 +75,6 @@
     "version": "latest"
   },
   {
-    "description": "DEPRECATED: use DocuSeal instead. Kept for migration window only.",
-    "id": "documenso",
-    "links": {
-      "docs": "https://catena.run/docs/apps/documenso/",
-      "github": "https://documenso.com/",
-      "website": "https://documenso.com/"
-    },
-    "logo": "logo.svg",
-    "name": "Documenso (deprecated)",
-    "tags": [
-      "pre-wired"
-    ],
-    "version": "latest"
-  },
-  {
     "description": "Team wiki + knowledge base. Keycloak SSO pre-wired. Replaces Notion / Confluence.",
     "id": "outline",
     "links": {
