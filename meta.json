@@ -60,6 +60,21 @@
     "version": "latest"
   },
   {
+    "description": "Element + Matrix homeserver. Chat (E2EE), voice, group video, SIP dial-in. Keycloak SSO pre-wired. Federation off by default.",
+    "id": "element",
+    "links": {
+      "docs": "https://docs.catena.run/apps/element/",
+      "github": "https://element.io/",
+      "website": "https://element.io/"
+    },
+    "logo": "logo.svg",
+    "name": "Element / Matrix",
+    "tags": [
+      "pre-wired"
+    ],
+    "version": "latest"
+  },
+  {
     "description": "Open-source document signing (default). Replaces DocuSign / HelloSign.",
     "id": "docuseal",
     "links": {

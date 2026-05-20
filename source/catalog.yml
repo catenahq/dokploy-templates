@@ -542,6 +542,151 @@ dokploy_template_catalog:
 
         Les apps iOS et Android de Rocket.Chat se connectent directement à votre serveur. Les utilisateurs collent `https://chat.<votre-domaine>` au premier lancement et se connectent via Keycloak.
 
+  - id: element
+    app_name: element
+    bench_pack: postgres
+    upstream_url: https://element.io/
+    sso_mode: pre-wired
+    domain_host: "element.{{ cloudflare_zone }}"
+    domain_service: element-web
+    domain_port: 80
+    compose_file: "compose/element.compose.yml"
+    # Element/Matrix ships across three publicly-reachable hostnames:
+    #   element.<base>        -> the Element web client
+    #   matrix.<base>         -> Synapse client API + .well-known
+    #   synapseadmin.<base>   -> admin UI (operator tier, gated)
+    #   elementmeet.<base>    -> bundled Jitsi (avoids collision with
+    #                            rocketchat's meet.<base>)
+    extra_domains:
+      - host: "matrix.{{ cloudflare_zone }}"
+        service: synapse
+        port: 8008
+      - host: "synapseadmin.{{ cloudflare_zone }}"
+        service: synapse-admin
+        port: 80
+      - host: "elementmeet.{{ cloudflare_zone }}"
+        service: jitsi-web
+        port: 80
+    # Per-template quiesce hooks. Synapse is postgres-backed; the
+    # daily pg_dumpall already produces a consistent snapshot of the
+    # DB regardless of in-flight HTTP writes, and the media_store/
+    # volume on disk is append-only (per-event MXC files). No
+    # synapse-side maintenance mode is needed; restic+pg_dumpall
+    # together capture a clean point-in-time. Matches other
+    # postgres-backed templates (docuseal, outline) that opt out of
+    # an application-level quiesce.
+    quiesce_pre: "true"
+    quiesce_post: "true"
+    quiesce_timeout_seconds: 5
+    env_managed_keys:
+      - OIDC_CLIENT_ID
+      - OIDC_CLIENT_SECRET
+      - OIDC_BASE_URL
+      - VPS_PUBLIC_IP
+      - TURN_HOSTNAME
+      - TURN_STATIC_AUTH_SECRET
+      - JITSI_JICOFO_AUTH_PASSWORD
+      - JITSI_JICOFO_COMPONENT_SECRET
+      - JITSI_JVB_AUTH_PASSWORD
+      - JIGASI_XMPP_PASSWORD
+    env_defaults:
+      - "ELEMENT_HOSTNAME=element.{{ cloudflare_zone }}"
+      - "MATRIX_HOSTNAME=matrix.{{ cloudflare_zone }}"
+      - "ELEMENT_JITSI_HOSTNAME=elementmeet.{{ cloudflare_zone }}"
+      # Synapse internal secrets -- minted once per deploy, persisted
+      # in the postgres DB + homeserver.yaml. Operator-overridable.
+      - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      - "SYNAPSE_REGISTRATION_SHARED_SECRET={{ lookup('password', '/dev/null length=48 chars=ascii_letters,digits') }}"
+      - "SYNAPSE_MACAROON_SECRET={{ lookup('password', '/dev/null length=48 chars=ascii_letters,digits') }}"
+      - "SYNAPSE_FORM_SECRET={{ lookup('password', '/dev/null length=48 chars=ascii_letters,digits') }}"
+      # Public open-registration off by default. Users come in via
+      # Keycloak OIDC. Flip to "true" if a deployment wants
+      # self-service signup with email verification.
+      - "ALLOW_PUBLIC_REGISTRATION=false"
+      # Federation closed by default. Comma-separated list of peers,
+      # rendered as a YAML list inside homeserver.yaml. Empty string
+      # -> empty list -> no federation. To open to matrix.org:
+      # "\"matrix.org\""
+      - "FEDERATION_DOMAIN_WHITELIST="
+      # OIDC -- Keycloak. Same vault key family as the other apps;
+      # env_managed_keys re-injects on every converge.
+      - "OIDC_BASE_URL=https://{{ keycloak_hostname | default('auth.' ~ cloudflare_zone) }}"
+      - "OIDC_CLIENT_ID=element"
+      - "OIDC_CLIENT_SECRET={{ vault_element_oidc_client_secret }}"
+      # Bundled Jitsi env. Shared coturn secret + per-component bearer
+      # secrets. Identical pattern to rocketchat's bundled Jitsi.
+      - "VPS_PUBLIC_IP={{ public_ip }}"
+      - "TURN_HOSTNAME={{ coturn_hostname | default('turn.' ~ cloudflare_zone) }}"
+      - "TURN_STATIC_AUTH_SECRET={{ vault_turn_static_auth_secret }}"
+      - "JITSI_JICOFO_AUTH_PASSWORD={{ vault_element_jitsi_jicofo_auth_password }}"
+      - "JITSI_JICOFO_COMPONENT_SECRET={{ vault_element_jitsi_jicofo_component_secret }}"
+      - "JITSI_JVB_AUTH_PASSWORD={{ vault_element_jitsi_jvb_auth_password }}"
+      - "JIGASI_XMPP_PASSWORD={{ vault_element_jigasi_xmpp_password }}"
+      # SIP trunk -- operator fills these in the Environment tab once
+      # they have a SIP provider account (Twilio / OVH / Bandwidth /
+      # etc.). Empty values leave jigasi unregistered; the rest of
+      # the stack still works (chat, voice, video, E2EE) -- only
+      # phone dial-in to Jitsi rooms is off.
+      - "JIGASI_SIP_URI="
+      - "JIGASI_SIP_PASSWORD="
+      - "JIGASI_SIP_SERVER="
+    en:
+      display_name: Element / Matrix
+      what_it_is: Self-hosted Element + Matrix homeserver -- federated-capable team chat with end-to-end encryption, voice, group video (bundled Jitsi), and SIP dial-in.
+      replaces: ["Slack", "Microsoft Teams", "Signal (for team use)", "Zoom (for small group calls)"]
+      compose_description: |
+        Element + Matrix homeserver. Chat (E2EE), voice, group video, SIP dial-in. Keycloak SSO pre-wired. Federation off by default.
+
+        https://docs.catena.run/apps/element/
+      setup_steps: |
+        1. Click **Deploy**. First boot takes ~3 minutes (Synapse generates signing keys, postgres initialises, Jitsi components register).
+        2. Open `element.<your-domain>` -- the Element web client opens. Click **Sign in with Keycloak**.
+        3. The first Keycloak user lands as a regular Matrix user. To promote them to homeserver admin, open `synapseadmin.<your-domain>` (operator-only, gated by Keycloak admin group), find the user, and toggle the admin flag.
+        4. *(Optional)* Enable SIP dial-in: fill `JIGASI_SIP_URI`, `JIGASI_SIP_PASSWORD`, `JIGASI_SIP_SERVER` in the Environment tab with your SIP provider's credentials, then redeploy. Without these, chat / voice / video still work -- only dial-in from a phone is off.
+        5. *(Optional)* Open federation: edit `FEDERATION_DOMAIN_WHITELIST` in the Environment tab (e.g. `"matrix.org","example.com"`) and redeploy. Default is empty (no federation -- the homeserver only talks to itself).
+      extra_notes: |
+        ### End-to-end encryption
+
+        New direct messages and new invite-only rooms are encrypted by default. Public rooms stay unencrypted (E2EE in large public rooms hurts mobile sync UX). Each user is prompted to set up **Secure Backup** the first time they log in -- this is a 24-character recovery key that lets them read encrypted history from a new device. Losing the key locks the user out of old encrypted messages; back it up the same way you back up a password manager.
+
+        ### Voice and video
+
+        - **1:1 calls** use the bundled Element/Matrix call stack and the shared TURN/STUN server at `turn.<your-domain>` for restrictive-network media relay.
+        - **Group video calls** open in an embedded Jitsi widget at `elementmeet.<your-domain>` (the bundled Jitsi instance). Calls never leave your server -- there is no fallback to `meet.jit.si`.
+        - **SIP dial-in** (jigasi) lets a regular phone dial a SIP number to join a Jitsi room. Enable by filling the `JIGASI_SIP_*` env vars (see step 4 above).
+
+        ### Mobile apps
+
+        Element's iOS and Android apps connect straight to your homeserver. Users tap **Use custom server** at first launch and enter `matrix.<your-domain>`. SSO via Keycloak works in-app.
+    fr:
+      display_name: Element / Matrix
+      what_it_is: Element + serveur Matrix auto-hébergés -- messagerie d'équipe avec chiffrement de bout en bout, voix, visio de groupe (Jitsi embarqué), et entrée SIP par téléphone. Fédération capable mais désactivée par défaut.
+      replaces: ["Slack", "Microsoft Teams", "Signal (en usage pro)", "Zoom (pour les petits appels de groupe)"]
+      compose_description: |
+        Element + serveur Matrix. Chat (E2EE), voix, visio de groupe, entrée SIP. SSO Keycloak pré-câblé. Fédération désactivée par défaut.
+
+        https://docs.catena.run/apps/element/
+      setup_steps: |
+        1. Cliquez **Deploy**. Le premier démarrage prend ~3 min (Synapse génère ses clés de signature, postgres s'initialise, les composants Jitsi s'enregistrent).
+        2. Ouvrez `element.<votre-domaine>` -- le client web Element s'ouvre. Cliquez **Se connecter avec Keycloak**.
+        3. Le premier utilisateur Keycloak arrive comme utilisateur Matrix normal. Pour le promouvoir admin du homeserver, ouvrez `synapseadmin.<votre-domaine>` (réservé opérateur, protégé par le groupe admin Keycloak), trouvez l'utilisateur, et activez l'indicateur admin.
+        4. *(Optionnel)* Activez l'entrée SIP : remplissez `JIGASI_SIP_URI`, `JIGASI_SIP_PASSWORD`, `JIGASI_SIP_SERVER` dans l'onglet Environment avec les identifiants de votre fournisseur SIP, puis redéployez. Sans ces valeurs, chat / voix / vidéo fonctionnent quand même -- seule l'entrée par téléphone est désactivée.
+        5. *(Optionnel)* Ouvrez la fédération : éditez `FEDERATION_DOMAIN_WHITELIST` dans l'onglet Environment (ex : `"matrix.org","example.com"`) puis redéployez. Par défaut vide (pas de fédération -- le homeserver ne parle qu'à lui-même).
+      extra_notes: |
+        ### Chiffrement de bout en bout
+
+        Les nouveaux messages directs et les nouveaux salons sur invitation sont chiffrés par défaut. Les salons publics restent en clair (le E2EE dans des salons publics nombreux dégrade la synchro mobile). Chaque utilisateur est invité à configurer le **Coffre-fort de récupération** lors de sa première connexion -- une clé de 24 caractères qui lui permet de lire l'historique chiffré depuis un nouvel appareil. Perdre la clé verrouille l'utilisateur hors de ses anciens messages chiffrés ; sauvegardez-la comme un mot de passe maître.
+
+        ### Voix et vidéo
+
+        - **Appels 1:1** utilisent le moteur d'appel Element/Matrix et le serveur TURN/STUN partagé `turn.<votre-domaine>` pour relayer les médias en réseau restrictif.
+        - **Appels de groupe** s'ouvrent dans un widget Jitsi embarqué sur `elementmeet.<votre-domaine>` (l'instance Jitsi embarquée). Les appels ne quittent jamais votre serveur -- pas de repli sur `meet.jit.si`.
+        - **Entrée SIP** (jigasi) permet à un téléphone classique d'appeler un numéro SIP pour rejoindre un salon Jitsi. Activez en remplissant les variables d'environnement `JIGASI_SIP_*` (voir étape 4 ci-dessus).
+
+        ### Applications mobiles
+
+        Les apps iOS et Android d'Element se connectent directement à votre homeserver. Les utilisateurs touchent **Utiliser un serveur personnalisé** au premier lancement et saisissent `matrix.<votre-domaine>`. La connexion via Keycloak fonctionne dans l'app.
+
   - id: docuseal
     app_name: docuseal
     bench_pack: postgres
