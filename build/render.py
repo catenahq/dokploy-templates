@@ -231,12 +231,23 @@ def render_meta_entry(entry: dict[str, Any], logo_filename: str) -> dict[str, An
 
 
 def validate_bench_fields(entries: list[dict[str, Any]]) -> list[str]:
-    """Validate every catalog entry's bench_pack + bench_fixture fields.
+    """Validate every catalog entry's bench-facing fields.
 
     Returns a list of human-readable error strings; empty list means
-    the catalog is valid. bench_pack is required (operator must declare
-    pack membership explicitly so the diff is reviewable); bench_fixture
-    is optional and defaults to "required".
+    the catalog is valid.
+
+    - bench_pack (required): pack membership, declared per-entry so
+      it shows up in the catalog diff.
+    - bench_fixture (optional, default "required"): whether the bench
+      requires a fixture file.
+    - memory_mb (required, positive int): peak RAM the template's
+      containers consume under bench load. Read by the catena-ops
+      parallel scheduler's RAM gate; a missing or non-positive value
+      lets parallel slots silently over-commit the bench host.
+    - hostname_baked (optional, default false, bool): whether the
+      template persists the install-time FQDN into immutable state.
+      The parallel scheduler pins any pack containing a baked
+      template to slot 0.
     """
     errors: list[str] = []
     for entry in entries:
@@ -257,6 +268,25 @@ def validate_bench_fields(entries: list[dict[str, Any]]) -> list[str]:
             errors.append(
                 f"{slug}: bench_fixture={fixture!r} not in "
                 f"{sorted(BENCH_FIXTURE_VALUES)}"
+            )
+        memory_mb = entry.get("memory_mb")
+        if memory_mb is None:
+            errors.append(
+                f"{slug}: missing required field memory_mb "
+                f"(positive int, peak MB under bench load)"
+            )
+        elif not isinstance(memory_mb, int) or isinstance(memory_mb, bool):
+            errors.append(
+                f"{slug}: memory_mb={memory_mb!r} must be a positive int"
+            )
+        elif memory_mb <= 0:
+            errors.append(
+                f"{slug}: memory_mb={memory_mb!r} must be a positive int"
+            )
+        hostname_baked = entry.get("hostname_baked", False)
+        if not isinstance(hostname_baked, bool):
+            errors.append(
+                f"{slug}: hostname_baked={hostname_baked!r} must be bool"
             )
     return errors
 
