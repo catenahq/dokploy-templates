@@ -240,14 +240,14 @@ def validate_bench_fields(entries: list[dict[str, Any]]) -> list[str]:
       it shows up in the catalog diff.
     - bench_fixture (optional, default "required"): whether the bench
       requires a fixture file.
-    - memory_mb (required, positive int): peak RAM the template's
-      containers consume under bench load. Read by the catena-ops
-      parallel scheduler's RAM gate; a missing or non-positive value
-      lets parallel slots silently over-commit the bench host.
     - hostname_baked (optional, default false, bool): whether the
       template persists the install-time FQDN into immutable state.
       The parallel scheduler pins any pack containing a baked
       template to slot 0.
+
+    Peak-RAM data lives in source/sizing-data.yml and is validated
+    separately by validate_sizing_data() so this function stays purely
+    catalog-shape.
     """
     errors: list[str] = []
     for entry in entries:
@@ -269,25 +269,65 @@ def validate_bench_fields(entries: list[dict[str, Any]]) -> list[str]:
                 f"{slug}: bench_fixture={fixture!r} not in "
                 f"{sorted(BENCH_FIXTURE_VALUES)}"
             )
-        memory_mb = entry.get("memory_mb")
-        if memory_mb is None:
-            errors.append(
-                f"{slug}: missing required field memory_mb "
-                f"(positive int, peak MB under bench load)"
-            )
-        elif not isinstance(memory_mb, int) or isinstance(memory_mb, bool):
-            errors.append(
-                f"{slug}: memory_mb={memory_mb!r} must be a positive int"
-            )
-        elif memory_mb <= 0:
-            errors.append(
-                f"{slug}: memory_mb={memory_mb!r} must be a positive int"
-            )
         hostname_baked = entry.get("hostname_baked", False)
         if not isinstance(hostname_baked, bool):
             errors.append(
                 f"{slug}: hostname_baked={hostname_baked!r} must be bool"
             )
+    return errors
+
+
+def validate_sizing_data(
+    entries: list[dict[str, Any]], sizing_services: list[dict[str, Any]]
+) -> list[str]:
+    """Enforce the catalog <-> sizing-data parity contract.
+
+    Every catalog id must have a sizing-data entry with a positive int
+    peak_ram_mb (the catena-ops parallel scheduler reads it + applies a
+    fixed 1.15x safety margin to gate slot acquisition). Sizing-data
+    entries that point at an id not in the catalog are flagged too --
+    they're either a typo or stale.
+    """
+    errors: list[str] = []
+    cat_ids = {entry.get("id") for entry in entries}
+    siz_by_id: dict[str, dict[str, Any]] = {}
+    for svc in sizing_services:
+        sid = svc.get("id")
+        if sid is None:
+            errors.append("sizing-data: entry missing required field id")
+            continue
+        if sid in siz_by_id:
+            errors.append(f"sizing-data: duplicate id={sid!r}")
+            continue
+        siz_by_id[sid] = svc
+
+    for slug in cat_ids:
+        if slug is None:
+            continue
+        svc = siz_by_id.get(slug)
+        if svc is None:
+            errors.append(
+                f"{slug}: missing entry in source/sizing-data.yml "
+                f"(every catalog id must declare peak_ram_mb there)"
+            )
+            continue
+        peak = svc.get("peak_ram_mb")
+        if peak is None:
+            errors.append(
+                f"{slug}: sizing-data peak_ram_mb is required "
+                f"(catena-ops bench scheduler reads it)"
+            )
+        elif not isinstance(peak, int) or isinstance(peak, bool) or peak <= 0:
+            errors.append(
+                f"{slug}: sizing-data peak_ram_mb={peak!r} "
+                f"must be a positive int"
+            )
+
+    orphans = sorted(set(siz_by_id) - cat_ids)
+    for slug in orphans:
+        errors.append(
+            f"{slug}: sizing-data entry has no matching catalog id"
+        )
     return errors
 
 
@@ -358,10 +398,21 @@ def render_all() -> int:
     catalog = yaml.safe_load(catalog_path.read_text())
     entries = catalog["dokploy_template_catalog"]
 
+    sizing_path = SOURCE / "sizing-data.yml"
+    sizing = yaml.safe_load(sizing_path.read_text())
+    sizing_services = sizing.get("services", []) or []
+
     field_errors = validate_bench_fields(entries)
     if field_errors:
         print("catalog validation failed:", file=sys.stderr)
         for err in field_errors:
+            print(f"  {err}", file=sys.stderr)
+        return 1
+
+    sizing_errors = validate_sizing_data(entries, sizing_services)
+    if sizing_errors:
+        print("sizing-data validation failed:", file=sys.stderr)
+        for err in sizing_errors:
             print(f"  {err}", file=sys.stderr)
         return 1
 

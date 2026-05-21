@@ -11,6 +11,10 @@ Dokploy-marketplace-compatible blueprints. Consumed by catenahq/ops
 ```
 source/                  # canonical input, Jinja-templated
   catalog.yml            # per-template metadata (slugs, domains, env vars, prose)
+  sizing-data.yml        # per-template idle/peak RAM, CPU, disk + bilingual notes;
+                         # canonical input for sales/docs sizing pages AND for the
+                         # catena-ops bench parallel scheduler (ram_budget reads
+                         # peak_ram_mb + applies a fixed 1.15x safety margin)
   compose/<id>.compose.yml
   assets/<id>/logo.png
 
@@ -78,12 +82,17 @@ are functional.
 ## How to add a template
 
 1. Add an entry to `source/catalog.yml` (schema documented inline).
-2. Add `source/compose/<id>.compose.yml`.
-3. Add `source/assets/<id>/logo.png` (square, 512x512 PNG).
-4. Run `uv run build/render.py`. Commit the regenerated
+2. Add a matching entry to `source/sizing-data.yml` (id MUST match
+   catalog id; peak_ram_mb is required, other fields nullable until a
+   measurement run lands). `build/render.py` validates parity and fails
+   the build if an id is in catalog but missing from sizing-data (or
+   vice versa).
+3. Add `source/compose/<id>.compose.yml`.
+4. Add `source/assets/<id>/logo.png` (square, 512x512 PNG).
+5. Run `uv run build/render.py`. Commit the regenerated
    `blueprints/<id>/` + updated `meta.json`.
-5. Open a PR. CI runs `build-and-verify.yml`.
-6. After merge, tag a `vX.Y.Z` release.
+6. Open a PR. CI runs `build-and-verify.yml`.
+7. After merge, tag a `vX.Y.Z` release.
 
 ## How to bump
 

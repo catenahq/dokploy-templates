@@ -20,7 +20,13 @@ layout, consumer model, and BASE URL setup.
 
 ## The render contract
 
-`build/render.py` transforms `source/` to `blueprints/` + `meta.json`:
+`build/render.py` transforms `source/catalog.yml` + `source/sizing-data.yml`
++ `source/compose/` to `blueprints/` + `meta.json`. `sizing-data.yml`
+is validated for catalog parity (every catalog id must have a
+matching sizing entry with a positive int `peak_ram_mb`; orphan
+sizing entries fail the build too) but is NOT emitted to
+`blueprints/` -- it is consumed downstream by ops/ (bench scheduler
++ generate-sizing-doc.py), not by Dokploy itself.
 
 - Jinja constructs in compose files are stripped or replaced:
   - `{{ vault_* }}` -> sentinel (`__CATENA_OPERATOR_WIRED__`) for keys
@@ -44,14 +50,18 @@ Checklist:
 1. `source/catalog.yml` entry with all required fields (id, app_name,
    upstream_url, sso_mode, domain_host, domain_port, env_defaults,
    en, fr).
-2. `source/compose/<id>.compose.yml` (existing Jinja-templated form
+2. Matching `source/sizing-data.yml` entry (same id). `peak_ram_mb`
+   is required (positive int); other RAM/CPU/disk fields nullable
+   until a real measurement run lands. Render.py validates parity
+   and fails the build on a missing or orphan id.
+3. `source/compose/<id>.compose.yml` (existing Jinja-templated form
    is fine -- render strips it).
-3. `source/assets/<id>/logo.png` (512x512 PNG, max 100KB).
-4. `uv run build/render.py` locally. Commit the regenerated
+4. `source/assets/<id>/logo.png` (512x512 PNG, max 100KB).
+5. `uv run build/render.py` locally. Commit the regenerated
    `blueprints/<id>/` and the updated `meta.json`.
-5. Open a PR. CI must pass `build-and-verify.yml` (idempotent render)
+6. Open a PR. CI must pass `build-and-verify.yml` (idempotent render)
    and `check:unicode`.
-6. After merge, `git tag -a vX.Y.Z -m "..." && git push --tags`.
+7. After merge, `git tag -a vX.Y.Z -m "..." && git push --tags`.
 
 ## When to bump the catalog schema
 
