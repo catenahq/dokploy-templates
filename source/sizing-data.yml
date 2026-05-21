@@ -276,12 +276,12 @@ services:
       Mautic cohabite avec Nextcloud + Rocket.Chat ; sinon un palier
       4 Go tient pour de faibles volumes d'envoi.
 
-  # The five entries below are UNMEASURED estimates carried over from
-  # the old catalog.yml memory_mb field (dropped 2026-05-21). peak_ram_mb
-  # equals the previous "conservative round" value used by the bench
-  # scheduler. Idle / CPU / disk numbers stay null until a real
-  # measurement run lands. Replace estimates with real measurements
-  # on the next bench fixture pass (R25).
+  # The five entries below are UNMEASURED. peak_ram_mb carries the
+  # conservative value previously hand-maintained in catalog.yml
+  # `memory_mb` (dropped 2026-05-21); idle / CPU / disk numbers stay
+  # null until a real measurement run lands. Notes are client-tone so
+  # the docs page reads naturally; replace estimates + populate the
+  # null fields on the next bench fixture pass (R25).
 
   - id: collabora
     idle_ram_mb: null
@@ -290,15 +290,16 @@ services:
     peak_cpu_pct: null
     disk_baseline_mb: null
     notes: |
-      Unmeasured; peak_ram_mb is the conservative estimate inherited from
-      the old catalog.yml memory_mb. Collabora is a stateless document
-      editor backed by Nextcloud; sizing dominated by per-document worker
-      processes during active editing.
+      Stateless document editor backed by Nextcloud. Sizing is dominated
+      by per-document worker processes spawned during active editing;
+      idle footprint is small. The peak figure above is a conservative
+      pre-launch estimate, not yet a measured value.
     notes_fr: |
-      Non mesuré ; peak_ram_mb reprend l'estimation prudente de l'ancien
-      champ memory_mb du catalogue. Collabora est un éditeur de documents
-      sans état adossé à Nextcloud ; le dimensionnement est dominé par les
-      workers par document lors de l'édition active.
+      Éditeur de documents sans état adossé à Nextcloud. Le
+      dimensionnement est dominé par les workers par document lors de
+      l'édition active ; l'empreinte au repos est faible. La valeur de
+      pic ci-dessus est une estimation prudente pré-lancement, pas
+      encore une mesure réelle.
 
   - id: element
     idle_ram_mb: null
@@ -307,14 +308,14 @@ services:
     peak_cpu_pct: null
     disk_baseline_mb: null
     notes: |
-      Unmeasured; peak_ram_mb is the conservative estimate inherited from
-      the old catalog.yml memory_mb. Element (Synapse + Postgres) is
-      memory-hungry on first sync; the value above is a launch-day floor.
+      Element (Synapse + Postgres + Redis) is memory-hungry during the
+      first federation sync; the value above is a launch-day floor.
+      Conservative pre-launch estimate, not yet a measured value.
     notes_fr: |
-      Non mesuré ; peak_ram_mb reprend l'estimation prudente de l'ancien
-      champ memory_mb du catalogue. Element (Synapse + Postgres) consomme
-      beaucoup de mémoire lors de la première synchronisation ; la valeur
-      ci-dessus est un plancher de mise en service.
+      Element (Synapse + Postgres + Redis) consomme beaucoup de mémoire
+      lors de la première synchronisation fédérée ; la valeur ci-dessus
+      est un plancher de mise en service. Estimation prudente
+      pré-lancement, pas encore une mesure réelle.
 
   - id: zammad
     idle_ram_mb: null
@@ -323,14 +324,13 @@ services:
     peak_cpu_pct: null
     disk_baseline_mb: null
     notes: |
-      Unmeasured; peak_ram_mb is the conservative estimate inherited from
-      the old catalog.yml memory_mb. Zammad (Rails + Postgres + Elastic +
-      Redis) sizes around the Elastic JVM heap; budget room for it.
+      Zammad (Rails + Postgres + Elasticsearch + Redis) sizes around the
+      Elastic JVM heap; budget room for it. Conservative pre-launch
+      estimate, not yet a measured value.
     notes_fr: |
-      Non mesuré ; peak_ram_mb reprend l'estimation prudente de l'ancien
-      champ memory_mb du catalogue. Zammad (Rails + Postgres + Elastic +
-      Redis) se dimensionne autour du heap JVM d'Elastic ; prévoyez de la
-      marge.
+      Zammad (Rails + Postgres + Elasticsearch + Redis) se dimensionne
+      autour du heap JVM d'Elastic ; prévoyez de la marge. Estimation
+      prudente pré-lancement, pas encore une mesure réelle.
 
   - id: chatwoot
     idle_ram_mb: null
@@ -339,13 +339,13 @@ services:
     peak_cpu_pct: null
     disk_baseline_mb: null
     notes: |
-      Unmeasured; peak_ram_mb is the conservative estimate inherited from
-      the old catalog.yml memory_mb. Chatwoot (Rails + Postgres + Redis +
-      Sidekiq); peak grows with active conversation count.
+      Chatwoot (Rails + Postgres + Redis + Sidekiq); peak grows with
+      active conversation count. Conservative pre-launch estimate, not
+      yet a measured value.
     notes_fr: |
-      Non mesuré ; peak_ram_mb reprend l'estimation prudente de l'ancien
-      champ memory_mb du catalogue. Chatwoot (Rails + Postgres + Redis +
-      Sidekiq) ; le pic croît avec le nombre de conversations actives.
+      Chatwoot (Rails + Postgres + Redis + Sidekiq) ; le pic croît avec
+      le nombre de conversations actives. Estimation prudente
+      pré-lancement, pas encore une mesure réelle.
 
   - id: easyappointments
     idle_ram_mb: null
@@ -354,11 +354,11 @@ services:
     peak_cpu_pct: null
     disk_baseline_mb: null
     notes: |
-      Unmeasured; peak_ram_mb is the conservative estimate inherited from
-      the old catalog.yml memory_mb. PHP-Apache + MariaDB; lightweight
-      footprint dominated by the database.
+      PHP-Apache + MariaDB; lightweight footprint dominated by the
+      database. Conservative pre-launch estimate, not yet a measured
+      value.
     notes_fr: |
-      Non mesuré ; peak_ram_mb reprend l'estimation prudente de l'ancien
-      champ memory_mb du catalogue. PHP-Apache + MariaDB ; empreinte
-      légère dominée par la base de données.
+      PHP-Apache + MariaDB ; empreinte légère dominée par la base de
+      données. Estimation prudente pré-lancement, pas encore une mesure
+      réelle.
 
