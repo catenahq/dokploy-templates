@@ -379,3 +379,25 @@ services:
       pousse à ~500 Mo et ~35 % CPU sur un vCPU pendant un court instant.
       Estimation prudente pré-lancement, pas encore une mesure réelle.
 
+  - id: invoiceninja
+    idle_ram_mb: 400
+    peak_ram_mb: 800
+    idle_cpu_pct: 2
+    peak_cpu_pct: 45
+    disk_baseline_mb: 350
+    notes: |
+      Four containers: PHP-FPM + nginx + MariaDB + Redis. Idle RAM
+      higher than Kimai because supervisord runs both the queue worker
+      and the scheduler inside the app container. Peak occurs during
+      bulk-invoice generation or queue-catch-up after a network outage
+      (bundled Chromium spins up for PDF rendering). Conservative
+      pre-launch estimate, not yet a measured value.
+    notes_fr: |
+      Quatre conteneurs : PHP-FPM + nginx + MariaDB + Redis. RAM au
+      repos plus élevée que Kimai car supervisord exécute à la fois le
+      worker de file et le planificateur dans le conteneur app. Le pic
+      arrive lors de génération de factures en masse ou de rattrapage
+      de file après une coupure réseau (Chromium intégré démarre pour
+      le rendu PDF). Estimation prudente pré-lancement, pas encore une
+      mesure réelle.
+

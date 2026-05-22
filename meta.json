@@ -298,5 +298,20 @@
       "post-deploy-ui"
     ],
     "version": "latest"
+  },
+  {
+    "description": "Invoicing + Stripe payments + recurring + client portal. Replaces FreshBooks / Zoho Invoice / QuickBooks invoicing.",
+    "id": "invoiceninja",
+    "links": {
+      "docs": "https://docs.catena.run/apps/invoiceninja/",
+      "github": "https://www.invoiceninja.com/",
+      "website": "https://www.invoiceninja.com/"
+    },
+    "logo": "logo.svg",
+    "name": "Invoice Ninja",
+    "tags": [
+      "post-deploy-ui"
+    ],
+    "version": "latest"
   }
 ]

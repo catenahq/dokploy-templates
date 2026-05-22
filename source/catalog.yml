@@ -1663,3 +1663,125 @@ dokploy_template_catalog:
         ### Ressources
 
         Kimai tourne en PHP-Apache + MariaDB. Prévoyez ~250 Mo de RAM au repos, ~500 Mo lors d'exports en masse ou de rendu de factures en fin de mois chargée.
+
+  - id: invoiceninja
+    app_name: invoiceninja
+    bench_pack: mariadb
+    # APP_URL baked into invoice PDFs (Stripe redirect URLs, client
+    # portal links). Flipping the FQDN breaks previously-sent invoice
+    # links + the Stripe webhook destination.
+    hostname_baked: true
+    upstream_url: https://www.invoiceninja.com/
+    sso_mode: post-deploy-ui
+    domain_host: "invoice.{{ cloudflare_zone }}"
+    domain_service: nginx
+    domain_port: 80
+    compose_file: "compose/invoiceninja.compose.yml"
+    env_defaults:
+      - "INVOICENINJA_HOSTNAME=invoice.{{ cloudflare_zone }}"
+      # APP_KEY must be set to base64:<44-char-base64-string> AFTER
+      # first deploy. See setup_steps -- the Dokploy ${password:N}
+      # helper cannot produce a valid Laravel APP_KEY, so this stays
+      # empty until the operator runs `php artisan key:generate --show`
+      # and pastes the output.
+      - "INVOICENINJA_APP_KEY="
+      - "INVOICENINJA_ADMIN_EMAIL=admin@{{ cloudflare_zone }}"
+      - "INVOICENINJA_ADMIN_PASSWORD={{ lookup('password', '/dev/null length=24 chars=ascii_letters,digits') }}"
+      - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      - "DB_ROOT_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      # SMTP. Exposed for the operator's managed-relay creds. Leaving
+      # MAIL_HOST blank means Invoice Ninja queues mail to nowhere --
+      # the queue worker logs the failure but the app stays usable
+      # for everything except actual outbound email.
+      - "INVOICENINJA_SMTP_HOST="
+      - "INVOICENINJA_SMTP_PORT=587"
+      - "INVOICENINJA_SMTP_USERNAME="
+      - "INVOICENINJA_SMTP_PASSWORD="
+      - "INVOICENINJA_MAIL_FROM=invoice@{{ cloudflare_zone }}"
+      - "INVOICENINJA_MAIL_FROM_NAME=Invoicing"
+    en:
+      display_name: Invoice Ninja
+      what_it_is: Open-source invoicing with Stripe + PayPal payment gateways, recurring billing, expense tracking, client portal for online payment. Self-hosted gets all Pro + Enterprise features.
+      replaces: ["FreshBooks", "QuickBooks (invoicing module)", "Zoho Invoice", "Harvest (invoicing)"]
+      compose_description: |
+        Invoicing + Stripe payments + recurring + client portal. Replaces FreshBooks / Zoho Invoice / QuickBooks invoicing.
+
+        https://docs.catena.run/apps/invoiceninja/
+      setup_steps: |
+        1. Click **Deploy**. Wait ~2 min for the first boot (Laravel migrations + admin user seeding via `init.sh`).
+        2. **One-time: generate APP_KEY**. From a shell on your VPS:
+           ```
+           docker exec $(docker ps --filter name=invoiceninja-app --format '{{.Names}}' | head -1) \
+             runuser -u www-data -- php artisan key:generate --show --no-interaction
+           ```
+           Copy the `base64:...` output. In Dokploy: **Environment** -> set `INVOICENINJA_APP_KEY` to the copied value. Click **Redeploy**.
+        3. Visit your Invoice Ninja domain. Sign in as `INVOICENINJA_ADMIN_EMAIL` / `INVOICENINJA_ADMIN_PASSWORD` from the Environment tab.
+        4. Configure your **company profile** (Settings -> Company Details): logo, address, tax IDs (GST/QST for Canada), default currency.
+        5. Wire **Stripe**: Settings -> Online Payments -> Add Gateway -> Stripe. Paste your Stripe publishable + secret keys. The client portal will accept card payments after this.
+        6. *(Optional)* Configure SMTP: paste `INVOICENINJA_SMTP_*` in the Environment tab, click Redeploy. Mail send fails silently into the queue until SMTP is wired.
+      extra_notes: |
+        ### Invoicing in the Catena suite
+
+        Invoice Ninja is the invoicing master in the Catena suite. Hours from Kimai (the time-tracking master) flow into Invoice Ninja invoices via the operator's monthly sync, and paid invoices from Invoice Ninja flow into ERPNext (the accounting master) via the operator's month-end close action. Clients in Invoice Ninja carry an `espo_account_id` custom field so each invoice ties back to the EspoCRM Account.
+
+        ### License
+
+        Invoice Ninja's self-hosted edition ships under the Elastic License 2.0. Two practical implications:
+        - Hosting Invoice Ninja for your business on your VPS, and your operator hosting it for you and billing for the hosting service, are both explicitly within the license terms.
+        - Reselling Invoice Ninja as a SaaS product, or bundling it into another SaaS, requires a commercial license from Invoice Ninja LLC. Catena's deployment model is "we deploy onto your VPS; you own the deployment" -- the licensed-and-permitted hosting path.
+        - The free self-hosted edition shows "Powered by Invoice Ninja" branding on client-facing surfaces. A US$40/year white-label license removes this. Recommended once you're invoicing real clients.
+
+        ### Authentication
+
+        Native OIDC for self-hosted is an open feature request upstream. Until it ships, Invoice Ninja uses local username/password. The Keycloak `client-staff` group gates access at the Traefik edge via oauth2-proxy before traffic reaches Invoice Ninja, so people outside your staff group cannot reach the login page.
+
+        ### Payment processing
+
+        Invoice Ninja handles the client-payment side. When a client pays via the portal, Stripe processes the card and Invoice Ninja marks the invoice paid + records the payment. The amount is settled into your Stripe account (under your name, your tax ID); Catena does not route payments through any operator-owned account.
+
+        ### Resource note
+
+        Invoice Ninja runs as PHP-FPM + nginx + MariaDB + Redis -- four containers. Plan for ~400 MB RAM at idle, ~800 MB under bulk-invoice generation or queue backlog catch-up. PDF rendering for invoices uses bundled Chromium and spikes briefly during multi-page exports.
+    fr:
+      display_name: Invoice Ninja
+      what_it_is: Facturation open-source avec passerelles de paiement Stripe + PayPal, facturation récurrente, suivi des dépenses, portail client pour paiement en ligne. L'auto-hébergement débloque toutes les fonctionnalités Pro + Enterprise.
+      replaces: ["FreshBooks", "QuickBooks (module facturation)", "Zoho Invoice", "Harvest (facturation)"]
+      compose_description: |
+        Facturation + paiements Stripe + récurrence + portail client. Remplace FreshBooks / Zoho Invoice / la facturation QuickBooks.
+
+        https://docs.catena.run/apps/invoiceninja/
+      setup_steps: |
+        1. Cliquez **Deploy**. Patientez ~2 min pour le premier démarrage (migrations Laravel + création de l'admin par `init.sh`).
+        2. **Une seule fois : générez APP_KEY**. Depuis un terminal sur votre VPS :
+           ```
+           docker exec $(docker ps --filter name=invoiceninja-app --format '{{.Names}}' | head -1) \
+             runuser -u www-data -- php artisan key:generate --show --no-interaction
+           ```
+           Copiez la sortie `base64:...`. Dans Dokploy : **Environment** -> réglez `INVOICENINJA_APP_KEY` à la valeur copiée. Cliquez **Redeploy**.
+        3. Visitez votre domaine Invoice Ninja. Connectez-vous avec `INVOICENINJA_ADMIN_EMAIL` / `INVOICENINJA_ADMIN_PASSWORD` de l'onglet Environment.
+        4. Configurez votre **profil d'entreprise** (Settings -> Company Details) : logo, adresse, identifiants fiscaux (TPS/TVQ au Canada), devise par défaut.
+        5. Connectez **Stripe** : Settings -> Online Payments -> Add Gateway -> Stripe. Collez vos clés publishable + secret. Le portail client accepte les paiements par carte après cela.
+        6. *(Optionnel)* Configurez SMTP : collez `INVOICENINJA_SMTP_*` dans l'onglet Environment, cliquez Redeploy. L'envoi de courriel reste en file d'attente silencieusement tant que SMTP n'est pas câblé.
+      extra_notes: |
+        ### Facturation dans la suite Catena
+
+        Invoice Ninja est le maître de la facturation dans la suite Catena. Les heures depuis Kimai (maître du suivi du temps) alimentent les factures Invoice Ninja via la synchronisation mensuelle de votre contact, et les factures payées depuis Invoice Ninja alimentent ERPNext (maître de la comptabilité) via l'action de fin de mois de votre contact. Les clients dans Invoice Ninja portent un champ personnalisé `espo_account_id` afin que chaque facture soit liée au compte EspoCRM correspondant.
+
+        ### Licence
+
+        L'édition auto-hébergée d'Invoice Ninja est sous Elastic License 2.0. Deux implications pratiques :
+        - Héberger Invoice Ninja pour votre entreprise sur votre VPS, et votre contact qui l'héberge pour vous et facture pour le service d'hébergement, sont explicitement autorisés par la licence.
+        - Revendre Invoice Ninja comme SaaS, ou l'intégrer comme partie d'un autre SaaS, requiert une licence commerciale d'Invoice Ninja LLC. Le modèle Catena est « nous déployons sur votre VPS ; vous possédez le déploiement » -- c'est la voie d'hébergement autorisée.
+        - L'édition gratuite affiche un bandeau « Powered by Invoice Ninja » sur les surfaces client. Une licence white-label à 40 USD/an le retire. Recommandé dès que vous facturez de vrais clients.
+
+        ### Authentification
+
+        OIDC natif en auto-hébergement est une demande ouverte côté upstream. En attendant, Invoice Ninja utilise un identifiant local. Le groupe Keycloak `client-staff` filtre l'accès au bord Traefik via oauth2-proxy avant que le trafic n'atteigne Invoice Ninja, donc les personnes hors de votre équipe ne peuvent pas atteindre la page de connexion.
+
+        ### Traitement des paiements
+
+        Invoice Ninja gère le côté paiement client. Quand un client paie via le portail, Stripe traite la carte et Invoice Ninja marque la facture payée + enregistre le paiement. Le montant est versé sur votre compte Stripe (à votre nom, votre identifiant fiscal) ; Catena ne fait transiter aucun paiement par un compte appartenant au contact.
+
+        ### Ressources
+
+        Invoice Ninja tourne en PHP-FPM + nginx + MariaDB + Redis -- quatre conteneurs. Prévoyez ~400 Mo de RAM au repos, ~800 Mo en génération de factures en masse ou rattrapage de file. Le rendu PDF utilise Chromium intégré et a des pointes brèves lors d'exports multi-pages.
