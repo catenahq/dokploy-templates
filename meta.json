@@ -283,5 +283,20 @@
       "none"
     ],
     "version": "latest"
+  },
+  {
+    "description": "Open-source time tracker. Customers, projects, timesheets, invoices. Replaces Toggl / Clockify / Harvest.",
+    "id": "kimai",
+    "links": {
+      "docs": "https://docs.catena.run/apps/kimai/",
+      "github": "https://www.kimai.org/",
+      "website": "https://www.kimai.org/"
+    },
+    "logo": "logo.svg",
+    "name": "Kimai",
+    "tags": [
+      "post-deploy-ui"
+    ],
+    "version": "latest"
   }
 ]

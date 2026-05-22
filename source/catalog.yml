@@ -1568,3 +1568,98 @@ dokploy_template_catalog:
         ### Ressources
 
         Mautic tourne en Apache + MariaDB + un worker sidecar + un cron sidecar. Prévoyez ~1.5 GB RAM au repos (worker + cron consomment ~300 MB chacun), ~3 GB sous envois de campagne ou reconstruction de segments. Le stockage croît avec les uploads de médias et l'historique des événements courriel ; budgétez ~10 GB après la première année d'usage régulier.
+
+  - id: kimai
+    app_name: kimai
+    bench_pack: mariadb
+    # KIMAI_HOSTNAME baked into Symfony's TRUSTED_HOSTS + persisted in
+    # invoice templates + the SAML AssertionConsumerService URL; flipping
+    # the FQDN breaks login + reissues invoices with stale URLs.
+    hostname_baked: true
+    upstream_url: https://www.kimai.org/
+    sso_mode: post-deploy-ui
+    domain_host: "time.{{ cloudflare_zone }}"
+    domain_service: kimai
+    domain_port: 8001
+    compose_file: "compose/kimai.compose.yml"
+    env_defaults:
+      - "KIMAI_HOSTNAME=time.{{ cloudflare_zone }}"
+      - "KIMAI_ADMIN_EMAIL=admin@{{ cloudflare_zone }}"
+      - "KIMAI_ADMIN_PASSWORD={{ lookup('password', '/dev/null length=24 chars=ascii_letters,digits') }}"
+      - "KIMAI_APP_SECRET={{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
+      - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      - "DB_ROOT_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      # SMTP. Exposed for the operator's managed-relay creds; Kimai
+      # consumes them via the Symfony Mailer URL format. Leave MAILER_URL
+      # blank to fall back to no-op `null://` (no emails sent). Common
+      # value once relay is set: smtp://USER:PASS@HOST:587?encryption=tls
+      - "KIMAI_MAIL_FROM=time@{{ cloudflare_zone }}"
+      - "KIMAI_MAIL_URL=null://localhost"
+    en:
+      display_name: Kimai
+      what_it_is: Open-source time tracker. Customers, projects, activities, timesheets, multi-user teams, invoice generation from tracked time. SAML federates with Keycloak via the post-deploy admin UI.
+      replaces: ["Toggl", "Clockify", "Harvest", "TimeCamp"]
+      compose_description: |
+        Open-source time tracker. Customers, projects, timesheets, invoices. Replaces Toggl / Clockify / Harvest.
+
+        https://docs.catena.run/apps/kimai/
+      setup_steps: |
+        1. Click **Deploy**. Wait ~1 min for the first boot (database migrations run on first start).
+        2. Visit your Kimai domain. Sign in as `KIMAI_ADMIN_EMAIL` / `KIMAI_ADMIN_PASSWORD` from the Environment tab.
+        3. *(Optional)* Enable Keycloak SAML SSO: **System** -> **Settings** -> **SAML** -> enable + paste:
+           - **Identity Provider Entity ID:** `<OIDC_ISSUER_URL>/protocol/saml/descriptor` (your operator can mint a SAML client in Keycloak)
+           - **Single Sign-On URL:** `<OIDC_ISSUER_URL>/protocol/saml`
+           - **X.509 Certificate:** from the Keycloak realm metadata
+           - **Username Attribute:** `username` (or `email`)
+           - Save. Local admin login keeps working as break-glass.
+        4. Configure your default invoice template under **Invoices** -> **Templates** -> pick one (DOCX / HTML / PDF). Set your company logo, address, and tax rates under **System** -> **Configuration**.
+      extra_notes: |
+        ### Time tracking in the Catena suite
+
+        Kimai is the time-tracking master in the Catena suite. Hours tracked here flow downstream to your invoicing app (Invoice Ninja) via the operator's monthly sync (see your operator if you want this automated). Customer records in Kimai carry an `espo_account_id` custom field so each timesheet ties back to the EspoCRM Account.
+
+        ### Invoicing built in
+
+        Kimai can generate PDF invoices directly from tracked time. Use this if your billing flow is "email a PDF; client pays via e-transfer or wire." If you need Stripe-driven online payment, a client portal, or recurring billing, ask your operator to deploy Invoice Ninja and the suite will route invoices through that instead.
+
+        ### Authentication
+
+        Until SAML is wired (step 3 above), Kimai uses local username/password. Even after SAML is wired, local admin login keeps working as a break-glass path. The Keycloak `client-staff` group gates access at the Traefik edge via oauth2-proxy before traffic reaches Kimai, so people outside your staff group cannot reach the login page.
+
+        ### Resource note
+
+        Kimai runs as PHP-Apache + MariaDB. Plan for ~250 MB RAM at idle, ~500 MB under bulk export or invoice rendering on busy month-end.
+    fr:
+      display_name: Kimai
+      what_it_is: Suivi du temps open-source. Clients, projets, activités, feuilles de temps, équipes multi-utilisateur, facturation à partir du temps suivi. SAML fédère avec Keycloak via l'UI admin post-déploiement.
+      replaces: ["Toggl", "Clockify", "Harvest", "TimeCamp"]
+      compose_description: |
+        Suivi du temps open-source. Clients, projets, feuilles de temps, factures. Remplace Toggl / Clockify / Harvest.
+
+        https://docs.catena.run/apps/kimai/
+      setup_steps: |
+        1. Cliquez **Deploy**. Patientez ~1 min pour le premier démarrage (les migrations de base s'exécutent au premier lancement).
+        2. Visitez votre domaine Kimai. Connectez-vous avec `KIMAI_ADMIN_EMAIL` / `KIMAI_ADMIN_PASSWORD` de l'onglet Environment.
+        3. *(Optionnel)* Activez Keycloak SAML SSO : **System** -> **Settings** -> **SAML** -> activez et collez :
+           - **Identity Provider Entity ID :** `<OIDC_ISSUER_URL>/protocol/saml/descriptor` (votre contact peut générer un client SAML dans Keycloak)
+           - **URL de connexion unique :** `<OIDC_ISSUER_URL>/protocol/saml`
+           - **Certificat X.509 :** tiré des métadonnées du realm Keycloak
+           - **Attribut nom d'utilisateur :** `username` (ou `email`)
+           - Validez. La connexion admin locale continue de fonctionner comme issue de secours.
+        4. Configurez votre modèle de facture par défaut sous **Invoices** -> **Templates** -> choisissez-en un (DOCX / HTML / PDF). Réglez le logo, l'adresse et les taux de taxe sous **System** -> **Configuration**.
+      extra_notes: |
+        ### Suivi du temps dans la suite Catena
+
+        Kimai est le maître du suivi du temps dans la suite Catena. Les heures saisies ici alimentent votre application de facturation (Invoice Ninja) via la synchronisation mensuelle de votre contact (demandez-lui de l'automatiser si vous le souhaitez). Les fiches clients dans Kimai portent un champ personnalisé `espo_account_id` afin que chaque feuille de temps soit liée au compte EspoCRM correspondant.
+
+        ### Facturation intégrée
+
+        Kimai peut générer des factures PDF directement depuis le temps suivi. Utilisez cette voie si votre flux de facturation est « envoyer un PDF, le client paie par virement Interac ou bancaire ». Si vous avez besoin de paiements en ligne via Stripe, d'un portail client ou de facturation récurrente, demandez à votre contact de déployer Invoice Ninja et la suite acheminera les factures à travers lui.
+
+        ### Authentification
+
+        Tant que SAML n'est pas câblé (étape 3 ci-dessus), Kimai utilise un identifiant local. Même après SAML, la connexion admin locale continue de fonctionner comme issue de secours. Le groupe Keycloak `client-staff` filtre l'accès au bord Traefik via oauth2-proxy avant que le trafic n'atteigne Kimai, donc les personnes hors de votre équipe ne peuvent pas atteindre la page de connexion.
+
+        ### Ressources
+
+        Kimai tourne en PHP-Apache + MariaDB. Prévoyez ~250 Mo de RAM au repos, ~500 Mo lors d'exports en masse ou de rendu de factures en fin de mois chargée.

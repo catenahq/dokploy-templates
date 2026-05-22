@@ -362,3 +362,20 @@ services:
       données. Estimation prudente pré-lancement, pas encore une mesure
       réelle.
 
+  - id: kimai
+    idle_ram_mb: 250
+    peak_ram_mb: 500
+    idle_cpu_pct: 1
+    peak_cpu_pct: 35
+    disk_baseline_mb: 180
+    notes: |
+      PHP-Apache + MariaDB. Idle is comparable to EspoCRM. Bulk
+      timesheet export or end-of-month invoice rendering pushes peak
+      RAM to ~500 MB and CPU briefly to ~35% on one vCPU. Conservative
+      pre-launch estimate, not yet a measured value.
+    notes_fr: |
+      PHP-Apache + MariaDB. Au repos comparable à EspoCRM. Export de
+      feuilles de temps en masse ou rendu de factures de fin de mois
+      pousse à ~500 Mo et ~35 % CPU sur un vCPU pendant un court instant.
+      Estimation prudente pré-lancement, pas encore une mesure réelle.
+
