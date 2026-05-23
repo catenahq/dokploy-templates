@@ -28,8 +28,49 @@ def test_allowed_commands_lock():
         "occ", "php",
         "mongo", "mongosh",
         "rocketchat-cli",
-        "touch", "rm",
+        "touch", "rm", "mv",
+        "mariadb-dump", "mysqldump",
+        "pg_dump", "pg_dumpall",
+        "mongodump",
+        "sqlite3",
     })
+
+
+def test_allowed_db_dump_commands_pass():
+    """Sprint 2 lint coverage: the new dump-tool commands appear as
+    inner $()  or as the first token of an inner sh -c '...' stage.
+    Lint focuses on the outer (`docker`) for these snippets; assert
+    the inner pattern doesn't trip the allowlist when it does appear
+    standalone."""
+    for cmd in ("mariadb-dump", "pg_dump", "pg_dumpall", "mongodump", "sqlite3"):
+        errs = L.lint_snippet(f"{cmd} --help", label="x")
+        assert errs == [], (cmd, errs)
+
+
+def test_mv_under_var_lib_app_passes():
+    """quiesce_post rotates the dump file to .prev via mv. mv is
+    allow-listed; both paths are the data volume's interior."""
+    errs = L.lint_snippet(
+        "mv /var/lib/mysql/.catena-dump.sql "
+        "/var/lib/mysql/.catena-dump.sql.prev",
+        label="x",
+    )
+    assert errs == [], errs
+
+
+def test_mv_outside_var_lib_rejected():
+    """mv with a path outside /var/lib/<app>/ is rejected, same as
+    rm. Catches a snippet that tries to mv /etc/shadow."""
+    errs = L.lint_snippet(
+        "mv /var/lib/mysql/.catena-dump.sql /etc/shadow",
+        label="x",
+    )
+    assert any("mv path" in e and "/etc/shadow" in e for e in errs), errs
+
+
+def test_mv_without_path_rejected():
+    errs = L.lint_snippet("mv -f", label="x")
+    assert any("mv without explicit path" in e for e in errs), errs
 
 
 def test_max_timeout_matches_render():

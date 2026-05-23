@@ -54,7 +54,17 @@ ALLOWED_COMMANDS = frozenset({
     "mongo", "mongosh",                 # Rocket.Chat / Mongo apps
     "rocketchat-cli",                   # RC admin
     # filesystem primitives (rm is path-restricted -- see below)
-    "touch", "rm",
+    "touch", "rm", "mv",
+    # logical-dump tools per engine (Sprint 2 -- atomic per-cycle DB
+    # consistency). The catalog snippets shell out via `docker exec`
+    # to the running app's DB container; these tools execute INSIDE
+    # the container (the host sh sees them only via $()  + sh -c '...').
+    # The allow-list still applies because the snippet's first
+    # non-$()  token might be one of these in future patterns.
+    "mariadb-dump", "mysqldump",
+    "pg_dump", "pg_dumpall",
+    "mongodump",
+    "sqlite3",
 })
 
 # Hard cap on per-hook timeout. Mirrors render.py:QUIESCE_MAX_TIMEOUT_S
@@ -119,16 +129,20 @@ def lint_snippet(snippet: str, *, label: str) -> list[str]:
                 f"{sorted(ALLOWED_COMMANDS)}"
             )
             continue
-        # rm needs path restriction.
-        if head == "rm":
+        # rm and mv need path restriction. Both can wreck the host
+        # if the catalog smuggles a non-app path; we require every
+        # non-flag arg to be under /var/lib/<app>/ . `mv` is allow-
+        # listed primarily for atomic-rename of dump output sidecars
+        # inside the DB container data volume (Sprint 2.1).
+        if head in ("rm", "mv"):
             paths = [t for t in toks[1:] if not t.startswith("-")]
             if not paths:
-                errors.append(f"{label}: rm without explicit path")
+                errors.append(f"{label}: {head} without explicit path")
             else:
                 for p in paths:
                     if not RM_ALLOWED_PATH_RE.match(p):
                         errors.append(
-                            f"{label}: rm path {p!r} not under "
+                            f"{label}: {head} path {p!r} not under "
                             f"/var/lib/<app>/"
                         )
 
