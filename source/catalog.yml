@@ -200,6 +200,16 @@ dokploy_template_catalog:
       - "NEXTCLOUD_ADMIN_USER=admin"
       - "NEXTCLOUD_ADMIN_PASSWORD={{ lookup('password', '/dev/null length=24 chars=ascii_letters,digits') }}"
       - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+      # Catena-managed config knobs surfaced in the Dokploy Environment
+      # tab (Sprint 2.3). The zz-catena.sh entrypoint hook re-renders
+      # /var/www/html/config/zz-catena.config.php on every container
+      # start, so a value change here + redeploy is enough; no occ
+      # call needed. Versions retention default `auto, 7` saves
+      # ~50-70% on hot+cold bucket storage cost vs the upstream
+      # 30-day cap; client policy decision -- NOT in env_managed_keys
+      # because operator + client are free to flip it.
+      - "NEXTCLOUD_LOGLEVEL=1"
+      - "NEXTCLOUD_VERSIONS_RETENTION=auto, 7"
       # S3 primary-storage coords. Defaults target the canonical
       # catena hot-tier (OVH BHS); operator overrides region/host
       # in the Dokploy UI for non-default deployments. Bucket name +

@@ -35,25 +35,39 @@ services:
     # with no script-side stderr on every start. Materializing the
     # hook ourselves via the wrapper bypasses that delivery path.
     #
-    # `$$CONFIG` / `$$@` -> `$CONFIG` / `$@` after compose
-    # interpolation. The outer `<<'HOOK'` and inner `<<'PHP'` are
-    # both single-quoted heredoc tags, so neither shell expansion
-    # round mangles the literal `$CONFIG`.
+    # `$$X` -> `$X` after compose interpolation. The outer
+    # `<<'HOOK'` is single-quoted so the wrapper writes the hook
+    # body verbatim; the INNER `<<PHP` is unquoted so the runtime
+    # shell expands `${NEXTCLOUD_LOGLEVEL}` and friends from the
+    # container env. `\$$CONFIG` escapes the `$` through both
+    # rounds so the literal `$CONFIG` (PHP variable) lands in the
+    # rendered .config.php.
     entrypoint:
       - /bin/sh
       - -ec
       - |
-        cat > /docker-entrypoint-hooks.d/before-starting/zz-loglevel.sh <<'HOOK'
+        cat > /docker-entrypoint-hooks.d/before-starting/zz-catena.sh <<'HOOK'
         #!/bin/sh
+        # Catena-managed config overlay. Re-rendered on every container
+        # start from the env vars below. Lets the operator change
+        # client-policy knobs (log level, version retention) via the
+        # Dokploy Environment tab without dropping into occ.
         set -e
-        cat > /var/www/html/config/zz-loglevel.config.php <<'PHP'
+        : "$${NEXTCLOUD_LOGLEVEL:=1}"
+        : "$${NEXTCLOUD_VERSIONS_RETENTION:=auto, 7}"
+        cat > /var/www/html/config/zz-catena.config.php <<PHP
         <?php
-        $$CONFIG = [
-          'loglevel' => 1,
+        \$$CONFIG = [
+          'loglevel' => $${NEXTCLOUD_LOGLEVEL},
+          'versions_retention_obligation' => '$${NEXTCLOUD_VERSIONS_RETENTION}',
         ];
         PHP
         HOOK
-        chmod 0755 /docker-entrypoint-hooks.d/before-starting/zz-loglevel.sh
+        chmod 0755 /docker-entrypoint-hooks.d/before-starting/zz-catena.sh
+        # Remove the predecessor hook if present from a prior catalog
+        # version so the same key is not declared twice.
+        rm -f /docker-entrypoint-hooks.d/before-starting/zz-loglevel.sh \
+              /var/www/html/config/zz-loglevel.config.php
         exec /entrypoint.sh "$$@"
       - --
     command: ["apache2-foreground"]
@@ -61,6 +75,24 @@ services:
       NEXTCLOUD_TRUSTED_DOMAINS: ${NEXTCLOUD_HOSTNAME}
       NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER}
       NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
+
+      # Catena-managed config knobs. The zz-catena.sh hook reads these
+      # at container start and writes /var/www/html/config/zz-catena
+      # .config.php. Change the value here (Dokploy Environment tab)
+      # + redeploy and the next container start picks it up.
+      #
+      # NEXTCLOUD_LOGLEVEL: 0=debug, 1=info, 2=warn, 3=error, 4=fatal.
+      # Default 1 matches the historical zz-loglevel.sh hook.
+      #
+      # NEXTCLOUD_VERSIONS_RETENTION: passed verbatim into the
+      # `versions_retention_obligation` config key. Format is
+      # `<min>, <max>` in days OR the keyword `auto, <N>` where N is
+      # the operator-controlled max-age cap. Default `auto, 7` keeps
+      # ~50-70% less storage than the upstream default 30-day cap;
+      # raise to `auto, 14` or `auto, 30` for clients who routinely
+      # need deeper undo. Direct lever on hot+cold bucket storage cost.
+      NEXTCLOUD_LOGLEVEL: ${NEXTCLOUD_LOGLEVEL:-1}
+      NEXTCLOUD_VERSIONS_RETENTION: ${NEXTCLOUD_VERSIONS_RETENTION:-auto, 7}
 
       # TLS is terminated upstream (Cloudflare Tunnel -> Traefik). Force
       # Nextcloud to render https:// links + trust the reverse-proxy
