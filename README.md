@@ -89,10 +89,21 @@ are functional.
    vice versa).
 3. Add `source/compose/<id>.compose.yml`.
 4. Add `source/assets/<id>/logo.png` (square, 512x512 PNG).
-5. Run `uv run build/render.py`. Commit the regenerated
+5. If the template has write traffic during backup (DB writes,
+   append-only filesystem state, queue consumption), add
+   `quiesce_pre` + `quiesce_post` + `quiesce_timeout_seconds` to
+   the catalog entry. Real examples: Nextcloud at
+   `source/catalog.yml:142-144` (occ maintenance:mode on/off) and
+   Rocket.Chat at `:505-507` (mongo fsyncLock/unlock). Stateless or
+   read-only templates can either omit these fields or set them to
+   `"true"` placeholders with a justifying comment (see Synapse at
+   `:614-616` for the placeholder pattern). `uv run
+   build/lint_quiesce.py` enforces snippet safety (no curl/wget,
+   no rm outside the app's data path).
+6. Run `uv run build/render.py`. Commit the regenerated
    `blueprints/<id>/` + updated `meta.json`.
-6. Open a PR. CI runs `build-and-verify.yml`.
-7. After merge, tag a `vX.Y.Z` release.
+7. Open a PR. CI runs `build-and-verify.yml`.
+8. After merge, tag a `vX.Y.Z` release.
 
 ## How to bump
 

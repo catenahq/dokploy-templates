@@ -57,11 +57,21 @@ Checklist:
 3. `source/compose/<id>.compose.yml` (existing Jinja-templated form
    is fine -- render strips it).
 4. `source/assets/<id>/logo.png` (512x512 PNG, max 100KB).
-5. `uv run build/render.py` locally. Commit the regenerated
+5. If the template has write traffic during backup (DB writes,
+   append-only filesystem state, queue consumption), add
+   `quiesce_pre` + `quiesce_post` + `quiesce_timeout_seconds` to
+   the catalog entry. Real examples: Nextcloud at
+   `source/catalog.yml:142-144` and Rocket.Chat at `:505-507`.
+   Stateless / read-only templates can omit OR use `"true"`
+   placeholders with a justifying comment (Synapse at `:614-616`
+   is the placeholder pattern). `uv run build/lint_quiesce.py`
+   enforces snippet safety (no curl/wget, no rm outside the app's
+   data path).
+6. `uv run build/render.py` locally. Commit the regenerated
    `blueprints/<id>/` and the updated `meta.json`.
-6. Open a PR. CI must pass `build-and-verify.yml` (idempotent render)
+7. Open a PR. CI must pass `build-and-verify.yml` (idempotent render)
    and `check:unicode`.
-7. After merge, `git tag -a vX.Y.Z -m "..." && git push --tags`.
+8. After merge, `git tag -a vX.Y.Z -m "..." && git push --tags`.
 
 ## When to bump the catalog schema
 
