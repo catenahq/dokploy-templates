@@ -869,6 +869,10 @@ dokploy_template_catalog:
     domain_service: espocrm
     domain_port: 80
     compose_file: "compose/espocrm.compose.yml"
+    # Atomic per-cycle MariaDB logical dump (Sprint 2.1).
+    quiesce_pre: "docker exec $(docker ps -q -f label=com.docker.compose.service=db -f label=com.docker.compose.project~=espocrm | head -1) sh -c 'mariadb-dump --single-transaction --quick --routines --triggers --add-drop-table -u root -p\"$MARIADB_ROOT_PASSWORD\" --all-databases > /var/lib/mysql/.catena-dump.sql.new && mv /var/lib/mysql/.catena-dump.sql.new /var/lib/mysql/.catena-dump.sql'"
+    quiesce_post: "true"
+    quiesce_timeout_seconds: 60
     env_defaults:
       - "ESPOCRM_HOSTNAME=crm.{{ cloudflare_zone }}"
       - "ESPOCRM_ADMIN_USERNAME=admin"
@@ -1134,6 +1138,12 @@ dokploy_template_catalog:
     domain_service: nginx
     domain_port: 80
     compose_file: "compose/wordpress.compose.yml"
+    # Atomic per-cycle MariaDB logical dump (Sprint 2.1). See kimai
+    # for the rationale; same idiom across every MariaDB-backed
+    # template in the catalog.
+    quiesce_pre: "docker exec $(docker ps -q -f label=com.docker.compose.service=db -f label=com.docker.compose.project~=wordpress | head -1) sh -c 'mariadb-dump --single-transaction --quick --routines --triggers --add-drop-table -u root -p\"$MARIADB_ROOT_PASSWORD\" --all-databases > /var/lib/mysql/.catena-dump.sql.new && mv /var/lib/mysql/.catena-dump.sql.new /var/lib/mysql/.catena-dump.sql'"
+    quiesce_post: "true"
+    quiesce_timeout_seconds: 60
     env_managed_keys:
       - WORDPRESS_HOSTNAME
       - WPMS_SMTP_PASS
@@ -1264,6 +1274,10 @@ dokploy_template_catalog:
     domain_service: frontend
     domain_port: 8080
     compose_file: "compose/erpnext.compose.yml"
+    # Atomic per-cycle MariaDB logical dump (Sprint 2.1).
+    quiesce_pre: "docker exec $(docker ps -q -f label=com.docker.compose.service=db -f label=com.docker.compose.project~=erpnext | head -1) sh -c 'mariadb-dump --single-transaction --quick --routines --triggers --add-drop-table -u root -p\"$MARIADB_ROOT_PASSWORD\" --all-databases > /var/lib/mysql/.catena-dump.sql.new && mv /var/lib/mysql/.catena-dump.sql.new /var/lib/mysql/.catena-dump.sql'"
+    quiesce_post: "true"
+    quiesce_timeout_seconds: 60
     env_defaults:
       - "ERPNEXT_HOSTNAME=erp.{{ cloudflare_zone }}"
       - "ERPNEXT_ADMIN_PASSWORD={{ lookup('password', '/dev/null length=24 chars=ascii_letters,digits') }}"
@@ -1414,6 +1428,10 @@ dokploy_template_catalog:
     domain_service: easyappointments
     domain_port: 80
     compose_file: "compose/easyappointments.compose.yml"
+    # Atomic per-cycle MariaDB logical dump (Sprint 2.1).
+    quiesce_pre: "docker exec $(docker ps -q -f label=com.docker.compose.service=db -f label=com.docker.compose.project~=easyappointments | head -1) sh -c 'mariadb-dump --single-transaction --quick --routines --triggers --add-drop-table -u root -p\"$MARIADB_ROOT_PASSWORD\" --all-databases > /var/lib/mysql/.catena-dump.sql.new && mv /var/lib/mysql/.catena-dump.sql.new /var/lib/mysql/.catena-dump.sql'"
+    quiesce_post: "true"
+    quiesce_timeout_seconds: 60
     env_defaults:
       - "EASYAPPOINTMENTS_HOSTNAME=book.{{ cloudflare_zone }}"
       - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
@@ -1488,6 +1506,10 @@ dokploy_template_catalog:
     domain_service: mautic_web
     domain_port: 80
     compose_file: "compose/mautic.compose.yml"
+    # Atomic per-cycle MariaDB logical dump (Sprint 2.1).
+    quiesce_pre: "docker exec $(docker ps -q -f label=com.docker.compose.service=db -f label=com.docker.compose.project~=mautic | head -1) sh -c 'mariadb-dump --single-transaction --quick --routines --triggers --add-drop-table -u root -p\"$MARIADB_ROOT_PASSWORD\" --all-databases > /var/lib/mysql/.catena-dump.sql.new && mv /var/lib/mysql/.catena-dump.sql.new /var/lib/mysql/.catena-dump.sql'"
+    quiesce_post: "true"
+    quiesce_timeout_seconds: 60
     env_defaults:
       - "MAUTIC_HOSTNAME=marketing.{{ cloudflare_zone }}"
       - "DB_PASSWORD={{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
@@ -1582,6 +1604,15 @@ dokploy_template_catalog:
     domain_service: kimai
     domain_port: 8001
     compose_file: "compose/kimai.compose.yml"
+    # Atomic per-cycle MariaDB logical dump. Sprint 2.1 introduces
+    # this lane: mariadb-dump --single-transaction uses MVCC to
+    # produce a consistent snapshot without blocking concurrent
+    # writers. Writes to a `.new` sidecar then atomic-renames onto
+    # `/var/lib/mysql/.catena-dump.sql`; the previous cycle's dump
+    # lives in the prior restic snapshot.
+    quiesce_pre: "docker exec $(docker ps -q -f label=com.docker.compose.service=db -f label=com.docker.compose.project~=kimai | head -1) sh -c 'mariadb-dump --single-transaction --quick --routines --triggers --add-drop-table -u root -p\"$MARIADB_ROOT_PASSWORD\" --all-databases > /var/lib/mysql/.catena-dump.sql.new && mv /var/lib/mysql/.catena-dump.sql.new /var/lib/mysql/.catena-dump.sql'"
+    quiesce_post: "true"
+    quiesce_timeout_seconds: 60
     env_defaults:
       - "KIMAI_HOSTNAME=time.{{ cloudflare_zone }}"
       - "KIMAI_ADMIN_EMAIL=admin@{{ cloudflare_zone }}"
@@ -1677,6 +1708,10 @@ dokploy_template_catalog:
     domain_service: nginx
     domain_port: 80
     compose_file: "compose/invoiceninja.compose.yml"
+    # Atomic per-cycle MariaDB logical dump (Sprint 2.1).
+    quiesce_pre: "docker exec $(docker ps -q -f label=com.docker.compose.service=db -f label=com.docker.compose.project~=invoiceninja | head -1) sh -c 'mariadb-dump --single-transaction --quick --routines --triggers --add-drop-table -u root -p\"$MARIADB_ROOT_PASSWORD\" --all-databases > /var/lib/mysql/.catena-dump.sql.new && mv /var/lib/mysql/.catena-dump.sql.new /var/lib/mysql/.catena-dump.sql'"
+    quiesce_post: "true"
+    quiesce_timeout_seconds: 60
     env_defaults:
       - "INVOICENINJA_HOSTNAME=invoice.{{ cloudflare_zone }}"
       # APP_KEY must be set to base64:<44-char-base64-string> AFTER
