@@ -1337,6 +1337,16 @@ dokploy_template_catalog:
     domain_service: actual
     domain_port: 5006
     compose_file: "compose/actualbudget.compose.yml"
+    # Atomic per-cycle SQLite Online Backup quiesce (Sprint 2.2).
+    # actualbudget is the only SQLite-as-primary-DB template in the
+    # catalog. The Online Backup API takes a SHARED lock that does
+    # NOT block concurrent writers -- safe to run while the server
+    # is live. Writes to `.new` sidecar then atomic-renames onto
+    # `/data/server-files/.catena-snapshot.sqlite`. On restore the
+    # operator replaces the live `account.sqlite` with the snapshot.
+    quiesce_pre: "docker exec $(docker ps -q -f label=com.docker.compose.service=actual -f label=com.docker.compose.project~=actualbudget | head -1) sh -c 'sqlite3 /data/server-files/account.sqlite \".backup /data/server-files/.catena-snapshot.sqlite.new\" && mv /data/server-files/.catena-snapshot.sqlite.new /data/server-files/.catena-snapshot.sqlite'"
+    quiesce_post: "true"
+    quiesce_timeout_seconds: 30
     env_defaults: []
     en:
       display_name: Actual Budget

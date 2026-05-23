@@ -71,10 +71,19 @@ ALLOWED_COMMANDS = frozenset({
 # so a CI-only path cannot drift from the render path.
 MAX_TIMEOUT_S = 60
 
-# rm is allowed only against paths under /var/lib/<app>/ . The regex
-# inspects every arg after "rm" and requires at least one to be a
-# qualifying path; flags (-rf etc.) are skipped.
-RM_ALLOWED_PATH_RE = re.compile(r"^/var/lib/[A-Za-z0-9._-]+/")
+# rm + mv are allowed only against paths INSIDE a recognised container
+# data volume:
+#   - /var/lib/<app>/...   (mysql, postgresql, mongo, mariadb, etc.)
+#   - /data/...            (actualbudget /data, n8n /data, plane /data,
+#                          and most upstream containers that bind
+#                          their data dir at /data by convention)
+# Paths outside these prefixes fail lint -- catches snippets that
+# try to mv /etc/shadow or rm -rf /. The regex is anchored to the
+# start of the path so a trailing single-quote (a YAML-string artefact
+# of the catalog snippet) does not break the match.
+RM_ALLOWED_PATH_RE = re.compile(
+    r"^(?:/var/lib/[A-Za-z0-9._-]+|/data)/"
+)
 
 
 def shell_tokens(snippet: str) -> list[list[str]]:

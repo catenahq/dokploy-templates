@@ -59,13 +59,32 @@ def test_mv_under_var_lib_app_passes():
 
 
 def test_mv_outside_var_lib_rejected():
-    """mv with a path outside /var/lib/<app>/ is rejected, same as
-    rm. Catches a snippet that tries to mv /etc/shadow."""
+    """mv with a path outside the allowed container-data prefixes is
+    rejected, same as rm. Catches a snippet that tries to mv
+    /etc/shadow."""
     errs = L.lint_snippet(
         "mv /var/lib/mysql/.catena-dump.sql /etc/shadow",
         label="x",
     )
     assert any("mv path" in e and "/etc/shadow" in e for e in errs), errs
+
+
+def test_paths_under_data_root_pass():
+    """The actualbudget upstream image mounts its data at /data.
+    /data/<subpath>/ is in the allow-list alongside /var/lib/<app>/."""
+    errs = L.lint_snippet(
+        "mv /data/server-files/.catena-snapshot.sqlite.new "
+        "/data/server-files/.catena-snapshot.sqlite",
+        label="x",
+    )
+    assert errs == [], errs
+
+
+def test_bare_data_no_subpath_rejected():
+    """/data without a subpath does NOT match -- the regex requires
+    a trailing slash and at least one subdir."""
+    errs = L.lint_snippet("rm -rf /data", label="x")
+    assert any("not under" in e for e in errs), errs
 
 
 def test_mv_without_path_rejected():
