@@ -1,0 +1,27 @@
+version: 2
+
+# Wave 1 dependency automation. dokploy-templates/ has no Python
+# manifest (build/render.py uses PEP 723 inline script metadata,
+# which Dependabot does not yet track). npm covers package.json
+# (unicode-hygiene tooling only).
+
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    groups:
+      npm-deps:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns: ["*"]
