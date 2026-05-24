@@ -1,0 +1,21 @@
+# Pre-commit hooks.
+#
+# Setup (run once after cloning):
+#   pipx install pre-commit  (or: pip install --user pre-commit)
+#   pre-commit install
+#
+# Behavior: gitleaks runs against the staged diff before every
+# commit (~1s). Blocks the commit if a leaked secret is detected.
+# Same gitleaks version as .github/workflows/gitleaks.yml, so the
+# local pre-commit verdict matches the CI gate.
+#
+# Bypass (use sparingly, only for documented false positives):
+#   git commit --no-verify
+# Better: add the exact regex / file path to .gitleaksignore so
+# everyone benefits from the suppression.
+
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
