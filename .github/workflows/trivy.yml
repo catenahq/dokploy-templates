@@ -20,7 +20,7 @@ jobs:
   trivy-config:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'config'
@@ -31,7 +31,7 @@ jobs:
           output: 'trivy-config.json'
       - name: Upload report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: trivy-config-report
           path: trivy-config.json
