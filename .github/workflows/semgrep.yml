@@ -1,0 +1,64 @@
+name: Semgrep (report-only)
+
+# Wave 3 SAST gate. dokploy-templates/ has a Python render pipeline
+# under build/ (render.py + lint_quiesce.py via PEP 723 inline
+# metadata). Compose files under source/compose/ + blueprints/ are
+# YAML but Trivy config scan covers those separately.
+# Report-only via continue-on-error.
+# See ~/.claude/plans/make-a-plan-that-shimmying-dragon.md.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '37 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install semgrep
+        run: pip install --no-cache-dir semgrep
+
+      - name: Scan (report-only)
+        continue-on-error: true
+        run: |
+          semgrep scan \
+            --config=p/python \
+            --config=p/dockerfile \
+            --sarif \
+            --output=semgrep.sarif \
+            --metrics=off \
+            --error \
+            --verbose \
+            .
+
+      - name: Summarize
+        if: always()
+        run: |
+          if [[ -f semgrep.sarif ]]; then
+            COUNT=$(jq '[.runs[]?.results[]?] | length' semgrep.sarif 2>/dev/null || echo 0)
+            echo "## Semgrep findings: $COUNT" >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$COUNT" != "0" ]]; then
+              jq -r '.runs[]?.results[]? | "- [\(.level // "warning")] \(.ruleId) at \(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine)"' \
+                semgrep.sarif >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+              echo "::warning::Semgrep found $COUNT issue(s) -- see semgrep.sarif artifact"
+            fi
+          fi
+
+      - name: Upload SARIF
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-sarif
+          path: semgrep.sarif
+          if-no-files-found: ignore
