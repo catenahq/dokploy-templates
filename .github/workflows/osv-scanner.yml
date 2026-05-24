@@ -1,9 +1,12 @@
-name: OSV-Scanner (report-only)
+name: OSV-Scanner
 
-# Wave 1 dependency-CVE gate. Uses Google's reusable workflow.
-# upload-sarif=false (no GitHub Advanced Security on this org).
-# fail-on-vuln=false keeps it report-only. Promote to blocking
-# after baseline is acknowledged. See plan in ~/.claude/plans/.
+# Wave 4 (blocking) dependency-CVE gate. Uses Google's reusable
+# workflow. upload-sarif=false (no GitHub Advanced Security on
+# this org). fail-on-vuln=true blocks on any vulnerability.
+#
+# Promoted from report-only on 2026-05-24 (Wave 4). Tune via
+# osv-scanner.toml ignore entries once the first PR surfaces
+# baseline findings. See plan in ~/.claude/plans/.
 
 on:
   pull_request:
@@ -23,11 +26,11 @@ jobs:
     uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.3.8"
     with:
       upload-sarif: false
-      fail-on-vuln: false
+      fail-on-vuln: true
 
   scan-pr:
     if: github.event_name == 'pull_request'
     uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@v2.3.8"
     with:
       upload-sarif: false
-      fail-on-vuln: false
+      fail-on-vuln: true

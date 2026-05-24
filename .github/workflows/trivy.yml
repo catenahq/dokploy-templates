@@ -1,10 +1,12 @@
-name: Trivy config (rendered compose, report-only)
+name: Trivy config (rendered compose)
 
-# Wave 3 IaC gate. Scans the rendered Dokploy blueprints under
-# blueprints/<id>/docker-compose.yml for known-bad base images +
-# misconfigurations. Trivy treats compose files as IaC and flags
+# Wave 4 (blocking) IaC gate. Scans the rendered Dokploy blueprints
+# under blueprints/<id>/docker-compose.yml for known-bad base images
+# + misconfigurations. Trivy treats compose files as IaC and flags
 # things like privileged: true, host networking, outdated tags, etc.
-# exit-code: '0' keeps it report-only.
+#
+# Promoted from report-only on 2026-05-24 (Wave 4). Severity floor
+# HIGH+CRITICAL, exit-code:1.
 
 on:
   pull_request:
@@ -26,7 +28,7 @@ jobs:
           scan-type: 'config'
           scan-ref: 'blueprints'
           severity: HIGH,CRITICAL
-          exit-code: '0'
+          exit-code: '1'
           format: 'json'
           output: 'trivy-config.json'
       - name: Upload report

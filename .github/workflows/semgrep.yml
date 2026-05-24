@@ -1,10 +1,14 @@
-name: Semgrep (report-only)
+name: Semgrep
 
-# Wave 3 SAST gate. dokploy-templates/ has a Python render pipeline
-# under build/ (render.py + lint_quiesce.py via PEP 723 inline
-# metadata). Compose files under source/compose/ + blueprints/ are
-# YAML but Trivy config scan covers those separately.
-# Report-only via continue-on-error.
+# Wave 4 (blocking) SAST gate. dokploy-templates/ has a Python
+# render pipeline under build/ (render.py + lint_quiesce.py via
+# PEP 723 inline metadata). Compose files under source/compose/
+# + blueprints/ are YAML but Trivy config scan covers those
+# separately.
+#
+# Promoted from report-only on 2026-05-24 (Wave 4). `--error` is
+# the rule-severity floor: only ERROR rules block; WARNING / INFO
+# stay advisory.
 # See ~/.claude/plans/make-a-plan-that-shimmying-dragon.md.
 
 on:
@@ -29,8 +33,7 @@ jobs:
       - name: Install semgrep
         run: pip install --no-cache-dir semgrep
 
-      - name: Scan (report-only)
-        continue-on-error: true
+      - name: Scan
         run: |
           semgrep scan \
             --config=p/python \
