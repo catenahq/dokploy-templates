@@ -85,7 +85,7 @@ jobs:
     if: failure() && github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/github-script@v8
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const title = `Trivy nightly: catalog images have HIGH/CRITICAL CVEs (${new Date().toISOString().slice(0,10)})`;
