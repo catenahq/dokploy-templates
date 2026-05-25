@@ -24,7 +24,6 @@ on:
 
 permissions:
   contents: read
-  issues: write  # nightly cron opens issues for HIGH/CRITICAL findings
 
 jobs:
   list-images:
@@ -65,7 +64,17 @@ jobs:
           image-ref: ${{ matrix.image }}
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: '1'
+          # REPORT-ONLY for catalog images. Upstream maintainers (nextcloud,
+          # rocketchat, frappe, etc.) own the base-layer rebuild cadence;
+          # findings here are almost always vendored libssl / glibc / Go
+          # stdlib / Java stdlib CVEs we cannot patch from this repo
+          # without bumping the entire tag -- and aggressive bumps break
+          # compose compatibility (postgres major, mongo replica-set, etc).
+          # Daily cron still uploads the report + opens a GitHub issue on
+          # delta; operator triages on cadence + Renovate proposes bumps.
+          # For images we OWN (catena-admin) the gate stays at exit-code:1
+          # in ops/.github/workflows/trivy.yml.
+          exit-code: '0'
           format: 'json'
           output: 'trivy-${{ steps.slug.outputs.slug }}.json'
       - name: Upload report
@@ -76,47 +85,15 @@ jobs:
           path: trivy-${{ steps.slug.outputs.slug }}.json
           if-no-files-found: ignore
 
-  open-issue-on-cron-failure:
-    # Only on the scheduled cron path: PRs already gate via exit-code 1,
-    # but scheduled scans need a separate notification surface because
-    # there is no PR to fail. Skipped on pull_request + push.
-    name: Open issue on nightly CVE
-    needs: trivy-image
-    if: failure() && github.event_name == 'schedule'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/github-script@v8
-        with:
-          script: |
-            const title = `Trivy nightly: catalog images have HIGH/CRITICAL CVEs (${new Date().toISOString().slice(0,10)})`;
-            const body = [
-              'The scheduled `trivy-images.yml` scan found HIGH or CRITICAL CVEs',
-              'in one or more catalog images on the current `main`.',
-              '',
-              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              '',
-              'Triage:',
-              '1. Open the workflow run, inspect failing matrix legs to identify affected images.',
-              '2. Either bump the image tag in `source/compose/<id>.compose.yml`',
-              '   (Renovate may already have a PR open) or add an entry to',
-              '   `.trivyignore` with a comment + revisit date.',
-              '3. Close this issue once the next scheduled run is green.',
-            ].join('\n');
-            const existing = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: 'security',
-            });
-            const dup = existing.data.find(i => i.title.startsWith('Trivy nightly: catalog images have HIGH/CRITICAL CVEs'));
-            if (dup) {
-              core.info(`Existing issue #${dup.number}; not opening a duplicate.`);
-              return;
-            }
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title,
-              body,
-              labels: ['security', 'dependencies'],
-            });
+  # NB: a previous `open-issue-on-cron-failure` job was wired to
+  # `if: failure() && github.event_name == 'schedule'`. With the
+  # report-only posture (exit-code: '0') the matrix never fails, so
+  # that condition would never trigger. Removed rather than rewritten:
+  # the per-image JSON artifacts uploaded above are the canonical
+  # finding surface, and Renovate's docker-compose manager handles
+  # the proactive bump cadence. Operator triages by spot-checking
+  # the Actions tab + Dependency Dashboard. If a notification surface
+  # becomes necessary later, the right shape is a separate
+  # post-matrix aggregator job that reads `Results[].Vulnerabilities`
+  # from the JSON artifacts and posts a summary -- not a re-enable
+  # of the old failure-conditional opener.
