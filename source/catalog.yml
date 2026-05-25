@@ -139,8 +139,8 @@ dokploy_template_catalog:
     # restic walk guarantees a consistent file-DB pair. occ runs as
     # www-data; `docker exec` against the `app` service is the
     # canonical Dokploy compose service name.
-    quiesce_pre: "docker exec -u www-data $(docker ps -q -f label=com.docker.compose.service=app -f label=com.docker.compose.project~=nextcloud | head -1) php occ maintenance:mode --on"
-    quiesce_post: "docker exec -u www-data $(docker ps -q -f label=com.docker.compose.service=app -f label=com.docker.compose.project~=nextcloud | head -1) php occ maintenance:mode --off"
+    quiesce_pre: 'docker exec -u www-data "$(docker ps -q -f label=com.docker.compose.service=app -f label=com.docker.compose.project~=nextcloud | head -1)" php occ maintenance:mode --on'
+    quiesce_post: 'docker exec -u www-data "$(docker ps -q -f label=com.docker.compose.service=app -f label=com.docker.compose.project~=nextcloud | head -1)" php occ maintenance:mode --off'
     quiesce_timeout_seconds: 30
     # Talk + HPB signaling endpoint. aio-talk bundles
     # signaling+janus+nats; only its HTTP/WSS port (8081) is publicly

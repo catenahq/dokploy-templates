@@ -26,6 +26,20 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: OSV-Scanner
         run: |
-          docker run --rm -v "$PWD:/src" -w /src \
+          set +e
+          out=$(docker run --rm -v "$PWD:/src" -w /src \
             ghcr.io/google/osv-scanner:v2.3.8 \
-            scan source --recursive .
+            scan source --recursive . 2>&1)
+          rc=$?
+          echo "$out"
+          # dokploy-templates is a content + Python-build repo: package.json
+          # carries no deps + no lockfile; build/ uses PEP 723 inline metadata.
+          # osv-scanner v2.x exits 128 with "No package sources found" in that
+          # case -- a true negative. Treat as green so the gate stays useful
+          # without false-failing every run. Drop the wrapper if the repo
+          # later grows a real lockfile.
+          if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "No package sources found"; then
+            echo "::notice ::OSV-Scanner found no lockfiles to scan -- treating as green."
+            exit 0
+          fi
+          exit $rc

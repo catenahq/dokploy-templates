@@ -60,7 +60,7 @@ jobs:
         run: |
           slug=$(echo "${{ matrix.image }}" | tr '/:.' '___')
           echo "slug=$slug" >> "$GITHUB_OUTPUT"
-      - uses: aquasecurity/trivy-action@0.36.0
+      - uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ matrix.image }}
           severity: HIGH,CRITICAL
