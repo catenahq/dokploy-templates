@@ -29,7 +29,7 @@ permissions:
 jobs:
   list-images:
     name: Enumerate catalog images
-    runs-on: [self-hosted, laptop]
+    runs-on: ubuntu-latest
     outputs:
       images: ${{ steps.list.outputs.images }}
     steps:
@@ -48,7 +48,7 @@ jobs:
   trivy-image:
     name: Trivy ${{ matrix.image }}
     needs: list-images
-    runs-on: [self-hosted, laptop]
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -83,7 +83,7 @@ jobs:
     name: Open issue on nightly CVE
     needs: trivy-image
     if: failure() && github.event_name == 'schedule'
-    runs-on: [self-hosted, laptop]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/github-script@v8
         with:
