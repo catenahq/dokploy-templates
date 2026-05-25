@@ -1,12 +1,13 @@
 name: OSV-Scanner
 
-# Wave 4 (blocking) dependency-CVE gate. Uses Google's reusable
-# workflow. upload-sarif=false (no GitHub Advanced Security on
-# this org). fail-on-vuln=true blocks on any vulnerability.
-#
-# Promoted from report-only on 2026-05-24 (Wave 4). Tune via
-# osv-scanner.toml ignore entries once the first PR surfaces
-# baseline findings. See plan in ~/.claude/plans/.
+# Wave 4 (blocking) dependency-CVE gate.
+# Migrated 2026-05-25 from google/osv-scanner-action reusable workflow
+# to direct Docker invocation so the job runs on the self-hosted laptop
+# runner (the reusable workflow pins runs-on upstream and cannot be
+# overridden). Any vulnerability found by osv-scanner exits non-zero
+# and fails the job, preserving fail-on-vuln=true semantics.
+# The PR-diff-only mode is replaced by full-scan-on-every-trigger;
+# baseline must stay clean either way under fail-on-vuln.
 
 on:
   pull_request:
@@ -16,21 +17,15 @@ on:
     - cron: '23 6 * * 1'
 
 permissions:
-  actions: read
   contents: read
-  security-events: write
 
 jobs:
-  scan-scheduled:
-    if: github.event_name != 'pull_request'
-    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2" # v2.3.8
-    with:
-      upload-sarif: false
-      fail-on-vuln: true
-
-  scan-pr:
-    if: github.event_name == 'pull_request'
-    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@9a498708959aeaef5ef730655706c5a1df1edbc2" # v2.3.8
-    with:
-      upload-sarif: false
-      fail-on-vuln: true
+  scan:
+    runs-on: [self-hosted, laptop]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: OSV-Scanner
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src \
+            ghcr.io/google/osv-scanner:v2.3.8 \
+            scan source --recursive .
