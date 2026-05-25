@@ -51,11 +51,16 @@
       "matchUpdateTypes": ["minor", "patch", "digest"],
       "groupName": "github-actions",
       "automerge": true
+    },
+    {
+      "matchManagers": ["docker-compose"],
+      "matchFileNames": ["source/compose/**"],
+      "groupName": "catalog images",
+      "automerge": false
     }
   ],
   "ignorePaths": [
     "**/node_modules/**",
-    "source/**",
     "blueprints/**"
   ]
 }

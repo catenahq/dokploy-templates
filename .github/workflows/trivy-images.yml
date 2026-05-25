@@ -1,0 +1,124 @@
+name: Trivy images (catalog)
+
+# Image-CVE scan against every container ref in source/compose/*.compose.yml.
+# Complements the existing trivy.yml (which scans the rendered blueprints as
+# IaC config -- privileged/host-net/etc. -- and does NOT touch base-image
+# OS package CVEs).
+#
+# Triggers:
+#   - pull_request: gate any catalog image bump on CVE delta before merge
+#   - push main: post-merge baseline
+#   - schedule daily 06:23 UTC: catch CVEs disclosed between PRs.
+#     Offsets from trivy.yml's `43 6 * * 1` so the two crons don't queue
+#     head-to-head.
+#
+# Severity floor: HIGH+CRITICAL with ignore-unfixed so unpatched upstream
+# CVEs do not block until a fix exists. Tune via .trivyignore at repo root.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 6 * * *'
+
+permissions:
+  contents: read
+  issues: write  # nightly cron opens issues for HIGH/CRITICAL findings
+
+jobs:
+  list-images:
+    name: Enumerate catalog images
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.list.outputs.images }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: List images from source/compose/
+        id: list
+        run: |
+          set -euo pipefail
+          mapfile -t imgs < <(uv run build/list_images.py)
+          json=$(printf '%s\n' "${imgs[@]}" | jq -R . | jq -cs .)
+          echo "images=$json" >> "$GITHUB_OUTPUT"
+          echo "Scanning ${#imgs[@]} unique images:"
+          printf '  %s\n' "${imgs[@]}"
+
+  trivy-image:
+    name: Trivy ${{ matrix.image }}
+    needs: list-images
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.list-images.outputs.images) }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Sanitize image name for artifact path
+        id: slug
+        run: |
+          slug=$(echo "${{ matrix.image }}" | tr '/:.' '___')
+          echo "slug=$slug" >> "$GITHUB_OUTPUT"
+      - uses: aquasecurity/trivy-action@0.36.0
+        with:
+          image-ref: ${{ matrix.image }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: 'json'
+          output: 'trivy-${{ steps.slug.outputs.slug }}.json'
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: trivy-image-${{ steps.slug.outputs.slug }}
+          path: trivy-${{ steps.slug.outputs.slug }}.json
+          if-no-files-found: ignore
+
+  open-issue-on-cron-failure:
+    # Only on the scheduled cron path: PRs already gate via exit-code 1,
+    # but scheduled scans need a separate notification surface because
+    # there is no PR to fail. Skipped on pull_request + push.
+    name: Open issue on nightly CVE
+    needs: trivy-image
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const title = `Trivy nightly: catalog images have HIGH/CRITICAL CVEs (${new Date().toISOString().slice(0,10)})`;
+            const body = [
+              'The scheduled `trivy-images.yml` scan found HIGH or CRITICAL CVEs',
+              'in one or more catalog images on the current `main`.',
+              '',
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              'Triage:',
+              '1. Open the workflow run, inspect failing matrix legs to identify affected images.',
+              '2. Either bump the image tag in `source/compose/<id>.compose.yml`',
+              '   (Renovate may already have a PR open) or add an entry to',
+              '   `.trivyignore` with a comment + revisit date.',
+              '3. Close this issue once the next scheduled run is green.',
+            ].join('\n');
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'security',
+            });
+            const dup = existing.data.find(i => i.title.startsWith('Trivy nightly: catalog images have HIGH/CRITICAL CVEs'));
+            if (dup) {
+              core.info(`Existing issue #${dup.number}; not opening a duplicate.`);
+              return;
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['security', 'dependencies'],
+            });
