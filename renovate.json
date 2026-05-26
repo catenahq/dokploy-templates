@@ -56,8 +56,24 @@
     {
       "matchManagers": ["docker-compose"],
       "matchFileNames": ["source/compose/**"],
-      "groupName": "catalog images",
+      "matchUpdateTypes": ["patch", "minor", "digest"],
+      "groupName": "catalog images (patch+minor)",
+      "automerge": true
+    },
+    {
+      "matchManagers": ["docker-compose"],
+      "matchFileNames": ["source/compose/**"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "catalog images (major)",
       "automerge": false
+    },
+    {
+      "description": "Traefik feature-set + config schema owned by Dokploy installer; minor/major land via Dokploy upgrades, not catalog edits.",
+      "matchManagers": ["docker-compose"],
+      "matchFileNames": ["source/compose/**"],
+      "matchPackageNames": ["traefik"],
+      "matchUpdateTypes": ["major", "minor"],
+      "enabled": false
     }
   ],
   "ignorePaths": [
