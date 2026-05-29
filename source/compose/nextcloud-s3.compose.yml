@@ -62,6 +62,23 @@ services:
           'versions_retention_obligation' => '$${NEXTCLOUD_VERSIONS_RETENTION}',
         ];
         PHP
+        # Server-side encryption (SSE), master-key mode. Encrypts file
+        # content before it is handed to the S3 object-store driver, so
+        # the storage provider only ever sees ciphertext at rest.
+        # Master-key mode encrypts against a single, operator-recoverable
+        # key (held in DB + the config `secret`) -- NOT per-user keys,
+        # which would put files out of reach of an operator restore.
+        # Idempotent: this hook runs on every container start, but
+        # master-key SELECTION runs only once -- on the fresh install,
+        # before any file is encrypted. Switching modes on already-
+        # encrypted data is destructive, hence the useMasterKey guard.
+        # `encryption:enable-master-key` prompts y/n and treats
+        # --no-interaction as "no", so the confirmation is fed on stdin.
+        php occ app:enable encryption
+        if [ "$$(php occ config:app:get encryption useMasterKey 2>/dev/null)" != "1" ]; then
+          printf 'y\n' | php occ encryption:enable-master-key
+        fi
+        php occ encryption:enable
         HOOK
         chmod 0755 /docker-entrypoint-hooks.d/before-starting/zz-catena.sh
         # Remove the predecessor hook if present from a prior catalog
