@@ -1563,7 +1563,7 @@ dokploy_template_catalog:
       extra_notes: |
         ### Authentication
 
-        Mautic community edition does not ship native OIDC. Local username/password is the default. SAML2 is supported upstream but requires per-deploy config; third-party generic-OAuth2 plugins exist. If single sign-on across the stack is required, contact your operator to add an oauth2-proxy front layer (Keycloak group `client-staff` gates access at the Traefik edge before traffic reaches Mautic).
+        Mautic community edition does not ship native OIDC. Local username/password is the default. SAML2 is supported upstream but requires per-deploy config; third-party generic-OAuth2 plugins exist. If single sign-on across the stack is required, contact your operator to add an oauth2-proxy front layer (Keycloak group `staff` gates access at the Traefik edge before traffic reaches Mautic).
 
         ### SMTP and sending reputation
 
@@ -1597,7 +1597,7 @@ dokploy_template_catalog:
       extra_notes: |
         ### Authentification
 
-        Mautic édition communautaire ne fournit pas d'OIDC natif. Connexion locale par nom d'utilisateur/mot de passe par défaut. SAML2 est supporté en amont mais demande une configuration par déploiement ; des plugins OAuth2 génériques tiers existent. Si un SSO unifié pour la stack est requis, contactez votre opérateur pour ajouter une couche oauth2-proxy en façade (le groupe Keycloak `client-staff` filtre l'accès au niveau Traefik avant que le trafic n'atteigne Mautic).
+        Mautic édition communautaire ne fournit pas d'OIDC natif. Connexion locale par nom d'utilisateur/mot de passe par défaut. SAML2 est supporté en amont mais demande une configuration par déploiement ; des plugins OAuth2 génériques tiers existent. Si un SSO unifié pour la stack est requis, contactez votre opérateur pour ajouter une couche oauth2-proxy en façade (le groupe Keycloak `staff` filtre l'accès au niveau Traefik avant que le trafic n'atteigne Mautic).
 
         ### SMTP et réputation d'envoi
 
@@ -1675,7 +1675,7 @@ dokploy_template_catalog:
 
         ### Authentication
 
-        Until SAML is wired (step 3 above), Kimai uses local username/password. Even after SAML is wired, local admin login keeps working as a break-glass path. The Keycloak `client-staff` group gates access at the Traefik edge via oauth2-proxy before traffic reaches Kimai, so people outside your staff group cannot reach the login page.
+        Until SAML is wired (step 3 above), Kimai uses local username/password. Even after SAML is wired, local admin login keeps working as a break-glass path. The Keycloak `staff` group gates access at the Traefik edge via oauth2-proxy before traffic reaches Kimai, so people outside your staff group cannot reach the login page.
 
         ### Resource note
 
@@ -1709,7 +1709,7 @@ dokploy_template_catalog:
 
         ### Authentification
 
-        Tant que SAML n'est pas câblé (étape 3 ci-dessus), Kimai utilise un identifiant local. Même après SAML, la connexion admin locale continue de fonctionner comme issue de secours. Le groupe Keycloak `client-staff` filtre l'accès au bord Traefik via oauth2-proxy avant que le trafic n'atteigne Kimai, donc les personnes hors de votre équipe ne peuvent pas atteindre la page de connexion.
+        Tant que SAML n'est pas câblé (étape 3 ci-dessus), Kimai utilise un identifiant local. Même après SAML, la connexion admin locale continue de fonctionner comme issue de secours. Le groupe Keycloak `staff` filtre l'accès au bord Traefik via oauth2-proxy avant que le trafic n'atteigne Kimai, donc les personnes hors de votre équipe ne peuvent pas atteindre la page de connexion.
 
         ### Ressources
 
@@ -1788,7 +1788,7 @@ dokploy_template_catalog:
 
         ### Authentication
 
-        Native OIDC for self-hosted is an open feature request upstream. Until it ships, Invoice Ninja uses local username/password. The Keycloak `client-staff` group gates access at the Traefik edge via oauth2-proxy before traffic reaches Invoice Ninja, so people outside your staff group cannot reach the login page.
+        Native OIDC for self-hosted is an open feature request upstream. Until it ships, Invoice Ninja uses local username/password. The Keycloak `staff` group gates access at the Traefik edge via oauth2-proxy before traffic reaches Invoice Ninja, so people outside your staff group cannot reach the login page.
 
         ### Payment processing
 
@@ -1831,7 +1831,7 @@ dokploy_template_catalog:
 
         ### Authentification
 
-        OIDC natif en auto-hébergement est une demande ouverte côté upstream. En attendant, Invoice Ninja utilise un identifiant local. Le groupe Keycloak `client-staff` filtre l'accès au bord Traefik via oauth2-proxy avant que le trafic n'atteigne Invoice Ninja, donc les personnes hors de votre équipe ne peuvent pas atteindre la page de connexion.
+        OIDC natif en auto-hébergement est une demande ouverte côté upstream. En attendant, Invoice Ninja utilise un identifiant local. Le groupe Keycloak `staff` filtre l'accès au bord Traefik via oauth2-proxy avant que le trafic n'atteigne Invoice Ninja, donc les personnes hors de votre équipe ne peuvent pas atteindre la page de connexion.
 
         ### Traitement des paiements
 
