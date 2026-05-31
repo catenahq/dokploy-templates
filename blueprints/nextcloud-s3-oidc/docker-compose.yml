@@ -75,6 +75,22 @@ services:
         # `encryption:enable-master-key` prompts y/n and treats
         # --no-interaction as "no", so the confirmation is fed on stdin.
         php occ app:enable encryption
+        # Force-set the useMasterKey config flag BEFORE any path that
+        # might trigger the encryption module's per-user-mode bootstrap.
+        # Bench diag (run 2026-05-31T14-26-35-ad7b nc_s3_hot_recovery)
+        # caught the failure mode this guards against: master_<id>.{pub,
+        # priv}Key files DID land in S3, but useMasterKey stayed empty
+        # in oc_appconfig. Nextcloud's KeyManager::getPrivateKey then
+        # took the per-user branch (because isMasterKeyEnabled returns
+        # false when useMasterKey != "1") and threw PrivateKeyMissing-
+        # Exception for admin -- the admin user has no per-user key
+        # because we never went through that setup. occ encryption:
+        # enable-master-key shorts out with "Master key already enabled"
+        # if the FILES exist, regardless of the config flag, so the
+        # original guard could not self-heal. Setting the flag
+        # idempotently FIRST flips KeyManager into master-key mode for
+        # every subsequent occ + Apache request.
+        php occ config:app:set encryption useMasterKey --value=1
         if [ "$$(php occ config:app:get encryption useMasterKey 2>/dev/null)" != "1" ]; then
           printf 'y\n' | php occ encryption:enable-master-key
         fi
