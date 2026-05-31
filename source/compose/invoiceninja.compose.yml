@@ -2,10 +2,8 @@
 # client portal. Picked 2026-05-21 as the invoicing master in the
 # Path E composition (EspoCRM -> Kimai -> Invoice Ninja -> ERPNext).
 # License: Elastic License 2.0; hosting on third-party infrastructure
-# and billing clients for the service is explicitly permitted.
-# See ops/internal_docs/operator/invoicing-comparison.md for the
-# license analysis + the disqualification of Akaunting (BSL cap) +
-# Crater (stale).
+# and billing clients for the service is explicitly permitted. Chosen
+# over Akaunting (BSL revenue cap) and Crater (stale).
 #
 # Topology (mirrors upstream github.com/invoiceninja/dockerfiles/debian
 # adapted to Catena's MariaDB + 4-service convention):
