@@ -27,7 +27,7 @@ declare their auth posture via the same compose labels:
 | Label | Values | Meaning |
 |---|---|---|
 | `vps.auth.mode` | `public` / `private` / `admin-only` | Whether (and how) the host is gated. Default if unset = `private`. |
-| `vps.auth.groups` | comma-list of Keycloak groups | Group filter applied in front of the host. `private` defaults to `client-staff`; `admin-only` always pins `administrators`. |
+| `vps.auth.groups` | comma-list of Keycloak groups | Group filter applied in front of the host. `private` defaults to `staff`; `admin-only` always pins `admin`. |
 | `vps.auth.oidc` | `true` / `false` | App is OIDC-aware itself (handles its own auth). `false` for hosts that need oauth2-proxy in front. |
 
 **Infra apps** (the ones in `oauth2_proxy_apps` /

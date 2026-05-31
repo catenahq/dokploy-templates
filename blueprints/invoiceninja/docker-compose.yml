@@ -17,7 +17,7 @@
 # (github.com/invoiceninja/invoiceninja/issues/10839). Until upstream
 # ships it, sso_mode=post-deploy-ui means the operator uses local
 # Invoice Ninja credentials; oauth2-proxy at the Traefik edge gates
-# access via the Keycloak client-staff group, so people outside the
+# access via the Keycloak staff group, so people outside the
 # group never reach the Invoice Ninja login page.
 #
 # Storage layout:
@@ -104,7 +104,7 @@ services:
       retries: 5
     labels:
       - "vps.auth.mode=public"
-      - "vps.auth.groups=client-staff"
+      - "vps.auth.groups=staff"
       - "vps.auto-update=patch"
     networks:
       dokploy-network:

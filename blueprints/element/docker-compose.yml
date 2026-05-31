@@ -96,7 +96,7 @@ services:
     labels:
       - "vps.auth.mode=public"
       - "vps.auth.oidc=true"
-      - "vps.auth.groups=client-staff"
+      - "vps.auth.groups=staff"
       - "vps.auth.oidc.redirect_uris=https://${MATRIX_HOSTNAME}/_synapse/client/oidc/callback"
       - "vps.auth.oidc.scopes=openid email profile groups"
       - "vps.auto-update=patch"
