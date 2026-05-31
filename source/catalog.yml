@@ -1840,3 +1840,95 @@ dokploy_template_catalog:
         ### Ressources
 
         Invoice Ninja tourne en PHP-FPM + nginx + MariaDB + Redis -- quatre conteneurs. Prévoyez ~400 Mo de RAM au repos, ~800 Mo en génération de factures en masse ou rattrapage de file. Le rendu PDF utilise Chromium intégré et a des pointes brèves lors d'exports multi-pages.
+
+  - id: mailserver
+    app_name: mailserver
+    bench_pack: nodb
+    # The mail FQDN is baked into DKIM/SPF/DMARC DNS + the MX record +
+    # every sent message's headers. Rekeying the hostname breaks
+    # deliverability and previously-published DNS.
+    hostname_baked: true
+    upstream_url: https://docker-mailserver.github.io/
+    # ops converge drops the Dovecot OAuth2 introspection conf + the
+    # Roundcube oauth provider config; the client never touches SSO.
+    sso_mode: auto
+    # Traefik routes the WEBMAIL (Roundcube) host. The mail host
+    # (mail.<zone>) is NOT a Traefik route -- it is the MX / mail FQDN
+    # reached directly on ports 25/465/587/993 (public-port registry).
+    domain_host: "webmail.{{ cloudflare_zone }}"
+    domain_service: roundcube
+    domain_port: 80
+    # NOTE: mail.<zone> (the MX / mail FQDN) is intentionally NOT a
+    # Traefik route. It is reached directly on ports 25/465/587/993
+    # (opened via the public-port registry from the compose vps.expose
+    # label) and resolved by a gray-cloud DNS A record that ops creates.
+    compose_file: "compose/mailserver.compose.yml"
+    # Outbound relay password is vault-backed + re-injected every
+    # converge (separate from the transactional SMTP_* creds).
+    env_managed_keys:
+      - RELAY_PASSWORD
+    env_defaults:
+      - "MAIL_HOSTNAME=mail.{{ cloudflare_zone }}"
+      - "MAIL_DOMAIN={{ cloudflare_zone }}"
+      - "WEBMAIL_HOSTNAME=webmail.{{ cloudflare_zone }}"
+      # Keycloak token introspection endpoint (Dovecot/Postfix validate
+      # XOAUTH2 access tokens against this). The introspection CLIENT
+      # secret is wired by ops into dovecot-oauth2.conf.ext, not here.
+      - "OIDC_INTROSPECTION_URL=https://{{ keycloak_hostname | default('auth.' ~ cloudflare_zone) }}/realms/{{ keycloak_realm | default('vps') }}/protocol/openid-connect/token/introspect"
+      # Outbound smarthost. HOST/USER are operator-pasted (provider-
+      # specific); PASSWORD is vault-backed (env_managed). Leaving HOST
+      # blank queues outbound with no relay -- inbound still works.
+      - "RELAY_HOST="
+      - "RELAY_PORT=587"
+      - "RELAY_USER="
+      - "RELAY_PASSWORD={{ vault_mailserver_relay_password }}"
+    en:
+      display_name: Mail server + webmail
+      what_it_is: Self-hosted email -- inbox storage on your VPS (Postfix + Dovecot + Rspamd) with Roundcube webmail and Keycloak single sign-on. Outbound is relayed through a reputable provider so messages are not flagged as spam.
+      replaces: ["Google Workspace (Gmail)", "Microsoft 365 (Exchange Online)"]
+      compose_description: |
+        Self-hosted mailboxes + Roundcube webmail, Keycloak SSO. Outbound via a relay. Replaces Gmail / Exchange Online.
+
+        https://docs.catena.run/apps/mailserver/
+      setup_steps: |
+        1. **Before deploy -- DNS + relay.** Mail needs DNS records and an outbound relay set up first. Your contact handles the MX, SPF, DKIM, DMARC, and reverse-DNS records and pastes the relay credentials. See the operator runbook.
+        2. Click **Deploy**. Wait ~3 minutes for the first boot (mail services + Roundcube).
+        3. Sign in at your webmail domain (`webmail.<your-domain>`). The login goes through Keycloak -- one account for every app in the suite. There is no separate mail password.
+        4. Mailboxes are created automatically for your staff and client users from Keycloak. A new user can sign in to webmail as soon as their account exists.
+      extra_notes: |
+        ### How sign-in works
+
+        Roundcube sends you to Keycloak to log in, then connects to your mailbox on your behalf using a single-sign-on token. You never type a separate email password, and nothing stores one. Because this needs a normal browser tab, webmail opens in its own tab from the suite menu rather than embedded inside another app.
+
+        ### Desktop and phone mail apps
+
+        This template targets **webmail**. Standard desktop clients (Thunderbird, Apple Mail) and phone Mail apps cannot use Keycloak single sign-on with a self-hosted server, so they are not supported here -- use Roundcube in the browser.
+
+        ### Why outbound goes through a relay
+
+        Sending mail straight from a VPS lands in spam: large providers distrust new server IPs. Outbound is relayed through a reputable provider so your messages are delivered, while your inbox and data stay on your VPS. This relay is separate from the suite's notification email.
+    fr:
+      display_name: Serveur de courriel + webmail
+      what_it_is: Courriel auto-hébergé -- stockage des boîtes sur votre VPS (Postfix + Dovecot + Rspamd) avec le webmail Roundcube et l'authentification unique Keycloak. L'envoi passe par un fournisseur de relais réputé pour éviter le classement en pourriel.
+      replaces: ["Google Workspace (Gmail)", "Microsoft 365 (Exchange Online)"]
+      compose_description: |
+        Boîtes auto-hébergées + webmail Roundcube, SSO Keycloak. Envoi via relais. Remplace Gmail / Exchange Online.
+
+        https://docs.catena.run/apps/mailserver/
+      setup_steps: |
+        1. **Avant le déploiement -- DNS + relais.** Le courriel nécessite des enregistrements DNS et un relais d'envoi configurés au préalable. Votre contact s'occupe des enregistrements MX, SPF, DKIM, DMARC et DNS inverse, et colle les identifiants du relais. Voir le guide de l'exploitant.
+        2. Cliquez **Deploy**. Patientez ~3 minutes pour le premier démarrage (services de courriel + Roundcube).
+        3. Connectez-vous à votre domaine webmail (`webmail.<votre-domaine>`). La connexion passe par Keycloak -- un seul compte pour toutes les applications de la suite. Aucun mot de passe de courriel distinct.
+        4. Les boîtes sont créées automatiquement pour vos utilisateurs staff et client depuis Keycloak. Un nouvel utilisateur peut se connecter au webmail dès que son compte existe.
+      extra_notes: |
+        ### Fonctionnement de la connexion
+
+        Roundcube vous redirige vers Keycloak pour vous connecter, puis accède à votre boîte en votre nom à l'aide d'un jeton d'authentification unique. Vous ne saisissez jamais de mot de passe de courriel distinct, et aucun n'est stocké. Comme cela exige un onglet de navigateur standard, le webmail s'ouvre dans son propre onglet depuis le menu de la suite plutôt qu'intégré dans une autre application.
+
+        ### Applications de bureau et mobiles
+
+        Ce modèle vise le **webmail**. Les clients de bureau classiques (Thunderbird, Apple Mail) et les apps Mail des téléphones ne peuvent pas utiliser l'authentification unique Keycloak avec un serveur auto-hébergé ; ils ne sont donc pas pris en charge ici -- utilisez Roundcube dans le navigateur.
+
+        ### Pourquoi l'envoi passe par un relais
+
+        Envoyer du courriel directement depuis un VPS finit en pourriel : les grands fournisseurs se méfient des nouvelles IP de serveur. L'envoi passe par un fournisseur réputé pour que vos messages soient livrés, tandis que votre boîte et vos données restent sur votre VPS. Ce relais est distinct du courriel de notification de la suite.

@@ -313,5 +313,20 @@
       "post-deploy-ui"
     ],
     "version": "latest"
+  },
+  {
+    "description": "Self-hosted mailboxes + Roundcube webmail, Keycloak SSO. Outbound via a relay. Replaces Gmail / Exchange Online.",
+    "id": "mailserver",
+    "links": {
+      "docs": "https://docs.catena.run/apps/mailserver/",
+      "github": "https://docker-mailserver.github.io/",
+      "website": "https://docker-mailserver.github.io/"
+    },
+    "logo": "logo.svg",
+    "name": "Mail server + webmail",
+    "tags": [
+      "auto"
+    ],
+    "version": "latest"
   }
 ]
