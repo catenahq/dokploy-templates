@@ -40,3 +40,5 @@ jobs:
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
       - name: pytest tests/
         run: uv run --with pytest --with pyyaml pytest tests/ -q
+      - name: lint quiesce snippets against the catalog
+        run: uv run build/lint_quiesce.py
