@@ -315,7 +315,7 @@
     "version": "latest"
   },
   {
-    "description": "Self-hosted mailboxes + Roundcube webmail, Keycloak SSO. Outbound via a relay. Replaces Gmail / Exchange Online.",
+    "description": "Self-hosted mailboxes + Roundcube webmail, Keycloak SSO. Outbound requires an SMTP relay. Replaces Gmail / Exchange Online.",
     "id": "mailserver",
     "links": {
       "docs": "https://docs.catena.run/apps/mailserver/",

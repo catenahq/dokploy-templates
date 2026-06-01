@@ -1884,10 +1884,10 @@ dokploy_template_catalog:
       - "RELAY_PASSWORD={{ vault_mailserver_relay_password }}"
     en:
       display_name: Mail server + webmail
-      what_it_is: Self-hosted email -- inbox storage on your VPS (Postfix + Dovecot + Rspamd) with Roundcube webmail and Keycloak single sign-on. Outbound is relayed through a reputable provider so messages are not flagged as spam.
+      what_it_is: Self-hosted email -- inbox storage on your VPS (Postfix + Dovecot + Rspamd) with Roundcube webmail and Keycloak single sign-on. Outbound requires an SMTP relay through a reputable provider (set up before deploy) so messages are not flagged as spam.
       replaces: ["Google Workspace (Gmail)", "Microsoft 365 (Exchange Online)"]
       compose_description: |
-        Self-hosted mailboxes + Roundcube webmail, Keycloak SSO. Outbound via a relay. Replaces Gmail / Exchange Online.
+        Self-hosted mailboxes + Roundcube webmail, Keycloak SSO. Outbound requires an SMTP relay. Replaces Gmail / Exchange Online.
 
         https://docs.catena.run/apps/mailserver/
       setup_steps: |
@@ -1909,10 +1909,10 @@ dokploy_template_catalog:
         Sending mail straight from a VPS lands in spam: large providers distrust new server IPs. Outbound is relayed through a reputable provider so your messages are delivered, while your inbox and data stay on your VPS. This relay is separate from the suite's notification email.
     fr:
       display_name: Serveur de courriel + webmail
-      what_it_is: Courriel auto-hébergé -- stockage des boîtes sur votre VPS (Postfix + Dovecot + Rspamd) avec le webmail Roundcube et l'authentification unique Keycloak. L'envoi passe par un fournisseur de relais réputé pour éviter le classement en pourriel.
+      what_it_is: Courriel auto-hébergé -- stockage des boîtes sur votre VPS (Postfix + Dovecot + Rspamd) avec le webmail Roundcube et l'authentification unique Keycloak. L'envoi requiert un relais SMTP via un fournisseur réputé (configuré avant le déploiement) pour éviter le classement en pourriel.
       replaces: ["Google Workspace (Gmail)", "Microsoft 365 (Exchange Online)"]
       compose_description: |
-        Boîtes auto-hébergées + webmail Roundcube, SSO Keycloak. Envoi via relais. Remplace Gmail / Exchange Online.
+        Boîtes auto-hébergées + webmail Roundcube, SSO Keycloak. Un relais SMTP est requis pour l'envoi. Remplace Gmail / Exchange Online.
 
         https://docs.catena.run/apps/mailserver/
       setup_steps: |
