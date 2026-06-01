@@ -55,11 +55,13 @@ services:
         set -e
         : "$${NEXTCLOUD_LOGLEVEL:=1}"
         : "$${NEXTCLOUD_VERSIONS_RETENTION:=auto, 7}"
+        : "$${NEXTCLOUD_TRASH_RETENTION:=auto, 30}"
         cat > /var/www/html/config/zz-catena.config.php <<PHP
         <?php
         \$$CONFIG = [
           'loglevel' => $${NEXTCLOUD_LOGLEVEL},
           'versions_retention_obligation' => '$${NEXTCLOUD_VERSIONS_RETENTION}',
+          'trashbin_retention_obligation' => '$${NEXTCLOUD_TRASH_RETENTION}',
         ];
         PHP
         # Server-side encryption (SSE), master-key mode. Encrypts file
@@ -159,8 +161,20 @@ services:
       # ~50-70% less storage than the upstream default 30-day cap;
       # raise to `auto, 14` or `auto, 30` for clients who routinely
       # need deeper undo. Direct lever on hot+cold bucket storage cost.
+      #
+      # NEXTCLOUD_TRASH_RETENTION: passed verbatim into the
+      # `trashbin_retention_obligation` config key (same `auto, <N>`
+      # format). This is the mass-DELETE safety net: a runaway desktop
+      # sync that deletes a tree propagates the deletes server-side, but
+      # the files land in each user's trash and are recoverable for at
+      # least N days regardless of free space. Default `auto, 30` keeps a
+      # 30-day undo window for accidental/ransomware bulk deletion; lower
+      # it only for storage-constrained clients who accept a shorter
+      # recovery window. (versions_retention covers OVERWRITES; this
+      # covers DELETES -- both are needed.)
       NEXTCLOUD_LOGLEVEL: ${NEXTCLOUD_LOGLEVEL:-1}
       NEXTCLOUD_VERSIONS_RETENTION: ${NEXTCLOUD_VERSIONS_RETENTION:-auto, 7}
+      NEXTCLOUD_TRASH_RETENTION: ${NEXTCLOUD_TRASH_RETENTION:-auto, 30}
 
       # TLS is terminated upstream (Cloudflare Tunnel -> Traefik). Force
       # Nextcloud to render https:// links + trust the reverse-proxy

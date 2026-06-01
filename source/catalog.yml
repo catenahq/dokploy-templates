@@ -210,6 +210,7 @@ dokploy_template_catalog:
       # because operator + client are free to flip it.
       - "NEXTCLOUD_LOGLEVEL=1"
       - "NEXTCLOUD_VERSIONS_RETENTION=auto, 7"
+      - "NEXTCLOUD_TRASH_RETENTION=auto, 30"
       # S3 primary-storage coords. Defaults target the canonical
       # catena hot-tier (OVH BHS); operator overrides region/host
       # in the Dokploy UI for non-default deployments. Bucket name +
