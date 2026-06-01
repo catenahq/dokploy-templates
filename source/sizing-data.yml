@@ -70,12 +70,19 @@ services:
       service is `app` (PHP-FPM) at ~280 MB idle, ~600 MB during the
       first user's mass-upload pass. With S3 primary storage configured,
       disk on the VPS stays roughly constant -- bucket grows instead.
+      Antivirus (files_antivirus, Daemon mode) is wired by ops to the
+      SHARED ops-managed clamd (catena-clamav network, ~1.5 GB resident),
+      NOT counted in these figures -- it is base infra shared with the
+      mail server; budget it once at the VPS level.
     notes_fr: |
       La pile app + db + redis + cron tourne à ~420 Mo au repos. Le
       service le plus lourd est `app` (PHP-FPM) à ~280 Mo au repos,
       ~600 Mo lors du premier import massif. Avec S3 en stockage
       primaire, le disque du VPS reste stable -- c'est le seau qui
-      grossit.
+      grossit. L'antivirus (files_antivirus, mode Daemon) est câblé par
+      l'opérateur vers le clamd PARTAGÉ (réseau catena-clamav, ~1,5 Go
+      résident), NON compté ici -- c'est de l'infrastructure partagée
+      avec le serveur de courriel ; à budgéter une fois au niveau du VPS.
 
   - id: rocketchat-oidc
     idle_ram_mb: 520
@@ -411,15 +418,31 @@ services:
       docker-mailserver (Postfix + Dovecot + Rspamd + Fail2ban) is the
       dominant cost; Rspamd and its Redis-backed stats account for most
       of the idle footprint. Roundcube (Apache + PHP, SQLite prefs) adds
-      ~120 MB. Peak is during a mailbox sync + spam-scan burst on a busy
-      inbound window. Disk baseline excludes stored mail (grows with the
-      mailboxes). Conservative pre-launch estimate, not yet measured.
+      ~120 MB; the mta-sts nginx is negligible (~5 MB). Peak is during a
+      mailbox sync + spam-scan burst on a busy inbound window. Disk
+      baseline excludes stored mail (grows with the mailboxes).
+      IMPORTANT base-infra cost NOT counted here: the bundled ClamAV is
+      OFF; antivirus is the SHARED ops-managed clamd (catena-clamav
+      network), which holds the signature DB resident at ~1.5 GB. That
+      clamd is a separate service (not in this compose), so it does not
+      appear in these per-template figures -- budget it once at the VPS
+      level. The same clamd also serves Nextcloud, so co-deploying the
+      two is a net saving vs two clamds. Conservative pre-launch
+      estimate, not yet measured.
     notes_fr: |
       docker-mailserver (Postfix + Dovecot + Rspamd + Fail2ban) domine ;
       Rspamd et ses statistiques sur Redis représentent l'essentiel de
       l'empreinte au repos. Roundcube (Apache + PHP, préférences SQLite)
-      ajoute ~120 Mo. Le pic survient lors d'une synchro de boîtes + une
-      rafale d'analyse antipourriel sur une fenêtre entrante chargée. Le
-      disque de base exclut le courriel stocké (qui grossit avec les
-      boîtes). Estimation prudente pré-lancement, pas encore mesurée.
+      ajoute ~120 Mo ; le nginx mta-sts est négligeable (~5 Mo). Le pic
+      survient lors d'une synchro de boîtes + une rafale d'analyse
+      antipourriel sur une fenêtre entrante chargée. Le disque de base
+      exclut le courriel stocké (qui grossit avec les boîtes).
+      Coût d'infrastructure NON compté ici : le ClamAV intégré est
+      DÉSACTIVÉ ; l'antivirus est le clamd PARTAGÉ géré par l'opérateur
+      (réseau catena-clamav), qui garde sa base de signatures en mémoire
+      à ~1,5 Go. Ce clamd est un service distinct (hors de ce compose),
+      donc il n'apparaît pas dans ces chiffres par modèle -- à budgéter
+      une fois au niveau du VPS. Le même clamd sert aussi Nextcloud, donc
+      déployer les deux ensemble est une économie nette par rapport à
+      deux clamd. Estimation prudente pré-lancement, pas encore mesurée.
 

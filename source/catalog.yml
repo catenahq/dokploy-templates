@@ -1864,6 +1864,15 @@ dokploy_template_catalog:
     # (opened via the public-port registry from the compose vps.expose
     # label) and resolved by a gray-cloud DNS A record that ops creates.
     compose_file: "compose/mailserver.compose.yml"
+    # MTA-STS policy host -- the only HTTP route this template adds
+    # beyond webmail. Served by the mta-sts nginx service in the compose;
+    # Dokploy adds the Traefik router from this extra_domains entry. The
+    # matching _mta-sts / _smtp._tls TXT records are created by ops
+    # (roles/infrastructure mailserver_dns.yml).
+    extra_domains:
+      - host: "mta-sts.{{ cloudflare_zone }}"
+        service: mta-sts
+        port: 80
     # Outbound relay password is vault-backed + re-injected every
     # converge (separate from the transactional SMTP_* creds).
     env_managed_keys:
@@ -1892,7 +1901,7 @@ dokploy_template_catalog:
 
         https://docs.catena.run/apps/mailserver/
       setup_steps: |
-        1. **Before deploy -- DNS + relay.** Mail needs DNS records and an outbound relay set up first. Your contact handles the MX, SPF, DKIM, DMARC, and reverse-DNS records and pastes the relay credentials. See the operator runbook.
+        1. **Before deploy -- DNS + relay.** Mail needs DNS records and an outbound relay set up first. Your contact handles the MX, SPF, DKIM, DMARC, reverse-DNS, and MTA-STS / TLS-RPT records and pastes the relay credentials. See the operator runbook.
         2. Click **Deploy**. Wait ~3 minutes for the first boot (mail services + Roundcube).
         3. Sign in at your webmail domain (`webmail.<your-domain>`). The login goes through Keycloak -- one account for every app in the suite. There is no separate mail password.
         4. Mailboxes are created automatically for your staff and client users from Keycloak. A new user can sign in to webmail as soon as their account exists.
@@ -1908,6 +1917,10 @@ dokploy_template_catalog:
         ### Why outbound goes through a relay
 
         Sending mail straight from a VPS lands in spam: large providers distrust new server IPs. Outbound is relayed through a reputable provider so your messages are delivered, while your inbox and data stay on your VPS. This relay is separate from the suite's notification email.
+
+        ### Spam and virus scanning
+
+        Incoming mail is checked for spam (sender reputation, content scoring) and every attachment is scanned for viruses before it reaches your inbox, the same protection a hosted suite gives you. The virus scanner is shared with Nextcloud when both are deployed, so files you upload there are scanned by the same engine.
     fr:
       display_name: Serveur de courriel + webmail
       what_it_is: Courriel auto-hébergé -- stockage des boîtes sur votre VPS (Postfix + Dovecot + Rspamd) avec le webmail Roundcube et l'authentification unique Keycloak. L'envoi requiert un relais SMTP via un fournisseur réputé (configuré avant le déploiement) pour éviter le classement en pourriel.
@@ -1917,7 +1930,7 @@ dokploy_template_catalog:
 
         https://docs.catena.run/apps/mailserver/
       setup_steps: |
-        1. **Avant le déploiement -- DNS + relais.** Le courriel nécessite des enregistrements DNS et un relais d'envoi configurés au préalable. Votre contact s'occupe des enregistrements MX, SPF, DKIM, DMARC et DNS inverse, et colle les identifiants du relais. Voir le guide de l'exploitant.
+        1. **Avant le déploiement -- DNS + relais.** Le courriel nécessite des enregistrements DNS et un relais d'envoi configurés au préalable. Votre contact s'occupe des enregistrements MX, SPF, DKIM, DMARC, DNS inverse, et MTA-STS / TLS-RPT, et colle les identifiants du relais. Voir le guide de l'exploitant.
         2. Cliquez **Deploy**. Patientez ~3 minutes pour le premier démarrage (services de courriel + Roundcube).
         3. Connectez-vous à votre domaine webmail (`webmail.<votre-domaine>`). La connexion passe par Keycloak -- un seul compte pour toutes les applications de la suite. Aucun mot de passe de courriel distinct.
         4. Les boîtes sont créées automatiquement pour vos utilisateurs staff et client depuis Keycloak. Un nouvel utilisateur peut se connecter au webmail dès que son compte existe.
@@ -1933,3 +1946,7 @@ dokploy_template_catalog:
         ### Pourquoi l'envoi passe par un relais
 
         Envoyer du courriel directement depuis un VPS finit en pourriel : les grands fournisseurs se méfient des nouvelles IP de serveur. L'envoi passe par un fournisseur réputé pour que vos messages soient livrés, tandis que votre boîte et vos données restent sur votre VPS. Ce relais est distinct du courriel de notification de la suite.
+
+        ### Analyse antipourriel et antivirus
+
+        Le courriel entrant est vérifié contre le pourriel (réputation de l'expéditeur, pointage du contenu) et chaque pièce jointe est analysée contre les virus avant d'atteindre votre boîte, la même protection qu'une suite hébergée. L'antivirus est partagé avec Nextcloud lorsque les deux sont déployés, donc les fichiers que vous y téléversez sont analysés par le même moteur.

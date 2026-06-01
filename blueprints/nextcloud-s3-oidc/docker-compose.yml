@@ -241,6 +241,11 @@ services:
         aliases:
           - nextcloud
       default: {}
+      # Shared antivirus: files_antivirus (Daemon mode) reaches the
+      # ops-managed clamd at clamav:3310 over this network. ops wires
+      # the app config (nextcloud_antivirus.yml); the same clamd serves
+      # the mail server. External so it spans composes.
+      catena-clamav: {}
     # Gate Nextcloud's first-boot install on postgres being ready to
     # accept connections. See the db service's healthcheck block for
     # the failure mode this prevents.
@@ -318,6 +323,9 @@ services:
     # on its own startup; cron picks it up via the shared mount.
     networks:
       - default
+      # Background virus scans (files_antivirus job) run here too, so
+      # cron also needs to reach the shared clamd.
+      - catena-clamav
     # Cron is also a Nextcloud entrypoint variant (runs /cron.sh) so
     # it gates on postgres readiness for the same reason `app` does.
     depends_on:
@@ -424,4 +432,9 @@ volumes:
 
 networks:
   dokploy-network:
+    external: true
+  # Shared antivirus network (clamd), created + owned by ops. External
+  # so the Nextcloud app/cron services and the mail server share one
+  # clamd instance (one signature DB + freshclam for both).
+  catena-clamav:
     external: true

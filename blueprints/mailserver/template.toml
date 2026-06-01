@@ -17,6 +17,11 @@ host = "webmail.${domain}"
 serviceName = "roundcube"
 port = 80
 
+[[config.domains]]
+host = "mta-sts.${domain}"
+serviceName = "mta-sts"
+port = 80
+
 [config.env]
 MAIL_HOSTNAME = "mail.${domain}"
 MAIL_DOMAIN = "${domain}"
