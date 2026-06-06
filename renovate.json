@@ -5,9 +5,9 @@
     ":dependencyDashboard",
     ":semanticCommits",
     ":timezone(America/Toronto)",
-    "schedule:earlyMondays",
     "helpers:pinGitHubActionDigests"
   ],
+  "schedule": ["before 5am"],
   "labels": ["dependencies"],
   "prConcurrentLimit": 5,
   "prHourlyLimit": 2,
@@ -35,7 +35,7 @@
       "matchDepTypes": ["dependencies"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "npm runtime (minor+patch)",
-      "automerge": false
+      "automerge": true
     },
     {
       "matchManagers": ["npm"],
@@ -46,7 +46,7 @@
       "matchManagers": ["pep723"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "python pep723 (minor+patch)",
-      "automerge": false
+      "automerge": true
     },
     {
       "matchManagers": ["github-actions"],
