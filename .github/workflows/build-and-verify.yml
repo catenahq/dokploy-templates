@@ -30,6 +30,15 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "24"
+      - name: Check required runner tools
+        run: |
+          missing=''
+          for t in git; do command -v "$t" >/dev/null 2>&1 || missing="$missing $t"; done
+          if [ -n "$missing" ]; then
+            echo "::error::Required tool(s) missing on the runner:$missing"
+            echo "::error::Install on the self-hosted runner: sudo apt-get install -y git -- see catenahq/ops internal_docs/operator/ci-runner-provisioning.md"
+            exit 1
+          fi
       - name: check:unicode
         run: node scripts/check-unicode.mjs
 

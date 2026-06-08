@@ -7,7 +7,7 @@
 
 services:
   web:
-    image: makeplane/plane-frontend:v1.3.0
+    image: makeplane/plane-frontend:v1.3.1
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_BASE_URL: ""
@@ -19,7 +19,7 @@ services:
       - default
 
   space:
-    image: makeplane/plane-space:v1.3.0
+    image: makeplane/plane-space:v1.3.1
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_BASE_URL: ""
@@ -31,7 +31,7 @@ services:
       - default
 
   admin:
-    image: makeplane/plane-admin:v1.3.0
+    image: makeplane/plane-admin:v1.3.1
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_BASE_URL: ""
@@ -43,7 +43,7 @@ services:
       - default
 
   api:
-    image: makeplane/plane-backend:v1.3.0
+    image: makeplane/plane-backend:v1.3.1
     restart: unless-stopped
     command: ./bin/docker-entrypoint-api.sh
     environment: &backend-env
@@ -82,7 +82,7 @@ services:
       - default
 
   worker:
-    image: makeplane/plane-backend:v1.3.0
+    image: makeplane/plane-backend:v1.3.1
     restart: unless-stopped
     command: ./bin/docker-entrypoint-worker.sh
     environment: *backend-env
@@ -94,7 +94,7 @@ services:
       - default
 
   beat-worker:
-    image: makeplane/plane-backend:v1.3.0
+    image: makeplane/plane-backend:v1.3.1
     restart: unless-stopped
     command: ./bin/docker-entrypoint-beat.sh
     environment: *backend-env
@@ -106,7 +106,7 @@ services:
       - default
 
   live:
-    image: makeplane/plane-live:v1.3.0
+    image: makeplane/plane-live:v1.3.1
     restart: unless-stopped
     environment:
       API_BASE_URL: http://api:8000
@@ -118,7 +118,7 @@ services:
       - default
 
   proxy:
-    image: makeplane/plane-proxy:v1.3.0
+    image: makeplane/plane-proxy:v1.3.1
     restart: unless-stopped
     environment:
       FILE_SIZE_LIMIT: "5242880"
