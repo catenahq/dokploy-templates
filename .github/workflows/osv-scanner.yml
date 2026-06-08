@@ -40,14 +40,15 @@ jobs:
           curl -fsSL -o "$bindir/osv-scanner" \
             "https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_${arch}"
           chmod +x "$bindir/osv-scanner"
+          # GitHub runs steps with `bash -e`; capture rc with -e OFF so the
+          # no-lockfile case (osv-scanner exits 128, "No package sources
+          # found") can be treated as green instead of aborting the step.
           set +e
           out=$("$bindir/osv-scanner" scan source --recursive . 2>&1); rc=$?
           set -e
           echo "$out"
-          # Content-only repos (no lockfile) make osv-scanner exit 128 with
-          # "No package sources found" -- the steady state here; treat green.
-          if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "No package sources found"; then
+          if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "No package sources found"; then
             echo "::notice ::OSV-Scanner found no lockfiles to scan -- treating as green."
             exit 0
           fi
-          exit $rc
+          exit "$rc"
