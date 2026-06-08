@@ -60,6 +60,12 @@ jobs:
           slug=$(echo "${{ matrix.image }}" | tr '/:.' '___')
           echo "slug=$slug" >> "$GITHUB_OUTPUT"
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        # Report-only matrix: a transient scan/pull error (e.g. Docker Hub
+        # i/o timeout or anonymous rate-limit) must NOT fail the gate -- only
+        # exit-code:0 below suppresses FINDING-based failures, not trivy's own
+        # FATAL on image init. continue-on-error makes the 'never fails'
+        # posture actually hold; the per-image JSON artifact still uploads.
+        continue-on-error: true
         with:
           image-ref: ${{ matrix.image }}
           severity: HIGH,CRITICAL
