@@ -40,7 +40,9 @@ jobs:
           curl -fsSL -o "$bindir/osv-scanner" \
             "https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_${arch}"
           chmod +x "$bindir/osv-scanner"
+          set +e
           out=$("$bindir/osv-scanner" scan source --recursive . 2>&1); rc=$?
+          set -e
           echo "$out"
           # Content-only repos (no lockfile) make osv-scanner exit 128 with
           # "No package sources found" -- the steady state here; treat green.
