@@ -1,0 +1,6 @@
+# scanctl config -- github.com/catenahq/scanctl
+# semgrep stays blocking to preserve the standalone semgrep.yml gate (--error).
+tools:
+  semgrep:
+    enabled: true
+    mode: block
