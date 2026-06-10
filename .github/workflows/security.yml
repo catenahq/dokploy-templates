@@ -27,4 +27,7 @@ jobs:
       security-events: write
     with:
       profile: full
-      runner: self-hosted
+      # dokploy-templates is public; the self-hosted runner group excludes
+      # public repos, so use a GitHub-hosted runner (the reusable workflow
+      # sets up go + uv itself).
+      runner: ubuntu-latest
