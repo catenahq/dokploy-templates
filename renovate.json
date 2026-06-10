@@ -1,28 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended",
-    ":dependencyDashboard",
-    ":semanticCommits",
-    ":timezone(America/Toronto)",
-    "helpers:pinGitHubActionDigests"
-  ],
-  "schedule": ["before 5am"],
-  "labels": ["dependencies"],
-  "prConcurrentLimit": 5,
-  "prHourlyLimit": 2,
-  "minimumReleaseAge": "7 days",
-  "internalChecksFilter": "strict",
-  "prCreation": "not-pending",
-  "vulnerabilityAlerts": {
-    "labels": ["security", "dependencies"],
-    "automerge": true,
-    "minimumReleaseAge": null
-  },
-  "lockFileMaintenance": {
-    "enabled": true,
-    "schedule": ["before 4am on monday"]
-  },
+  "extends": ["github>catenahq/scanctl:supply-chain"],
   "packageRules": [
     {
       "matchManagers": ["npm"],
@@ -47,12 +25,6 @@
       "matchManagers": ["pep723"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "python pep723 (minor+patch)",
-      "automerge": true
-    },
-    {
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["minor", "patch", "digest"],
-      "groupName": "github-actions",
       "automerge": true
     },
     {
