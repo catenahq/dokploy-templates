@@ -6,7 +6,7 @@
 
 services:
   app:
-    image: nextcloud:33.0.3-apache
+    image: nextcloud:34.0.0-apache
     restart: unless-stopped
     # Two-stage delivery for the loglevel override:
     #
@@ -293,7 +293,7 @@ services:
       - default
 
   cron:
-    image: nextcloud:33.0.3-apache
+    image: nextcloud:34.0.0-apache
     restart: unless-stopped
     entrypoint: /cron.sh
     environment:
