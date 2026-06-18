@@ -2,7 +2,7 @@
 #
 # Setup (run once after cloning):
 #   pipx install pre-commit  (or: pip install --user pre-commit)
-#   pre-commit install
+#   pre-commit install --hook-type pre-commit --hook-type pre-push
 #
 # Behavior: gitleaks runs against the staged diff before every
 # commit (~1s). Blocks the commit if a leaked secret is detected.
@@ -19,3 +19,17 @@ repos:
     rev: v8.30.1
     hooks:
       - id: gitleaks
+
+  - repo: local
+    hooks:
+      # Push-protection parity: scan the exact commit range being pushed, so a
+      # secret committed with --no-verify (or before hooks were installed) is
+      # blocked before it reaches the remote. Requires gitleaks on PATH (pin
+      # the same version as above). Enabled by the pre-push hook type in setup.
+      - id: gitleaks-push
+        name: Detect secrets in pushed commits
+        language: system
+        entry: bash -c 'f=$PRE_COMMIT_FROM_REF; t=$PRE_COMMIT_TO_REF; git rev-parse -q --verify "$f^{commit}" >/dev/null 2>&1 && r="$f..$t" || r="$t"; exec gitleaks git --redact --no-banner --log-opts="$r"'
+        stages: [pre-push]
+        pass_filenames: false
+        require_serial: true
